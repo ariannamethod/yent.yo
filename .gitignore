@@ -1,0 +1,6 @@
+vitriol
+data/
+weights/*.bin
+checkpoints/
+samples/
+__pycache__/
