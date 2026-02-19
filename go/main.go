@@ -9,25 +9,35 @@ import (
 	"math/rand"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 )
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("Vitriol — BK-SDM-Tiny Text-to-Image (Pure Go)")
+		fmt.Println("yent.yo — Text-to-Image (Pure Go, Zero Dependencies)")
 		fmt.Println()
 		fmt.Println("Usage:")
-		fmt.Println("  vitriol <model_dir> [prompt] [output.png] [seed] [steps] [latent_size]")
+		fmt.Println("  yentyo <sd_model_dir> [prompt] [output.png] [seed] [steps] [latent_size]")
+		fmt.Println("  yentyo <sd_model_dir> --yent <micro_yent.gguf> [seed_phrase] [output.png] [seed]")
 		fmt.Println()
-		fmt.Println("Example:")
-		fmt.Println("  vitriol bk-sdm-tiny \"a cat on a roof\" cat.png 42 25 64")
-		fmt.Println("  vitriol bk-sdm-tiny \"a cat\" cat.png 42 2 16   # fast test (16x16 latent)")
+		fmt.Println("Examples:")
+		fmt.Println("  yentyo bk-sdm-tiny \"a cat on a roof\" cat.png 42 25 64")
+		fmt.Println("  yentyo bk-sdm-tiny --yent micro-yent-f16.gguf \"a painting of\" auto.png 42")
 		os.Exit(0)
 	}
 
 	modelDir := os.Args[1]
+
+	// Check for --yent mode
+	if len(os.Args) > 2 && os.Args[2] == "--yent" {
+		runWithYent(modelDir)
+		return
+	}
+
+	// Direct prompt mode
 	prompt := "a painting of a cat"
-	outPath := "vitriol_output.png"
+	outPath := "yentyo_output.png"
 	seed := int64(42)
 	numSteps := 25
 	latentSize := 64
@@ -49,6 +59,57 @@ func main() {
 		fmt.Sscanf(os.Args[6], "%d", &latentSize)
 	}
 
+	runDiffusion(modelDir, prompt, outPath, seed, numSteps, latentSize, guidanceScale)
+}
+
+// runWithYent uses micro-Yent to generate prompt, then runs diffusion
+func runWithYent(sdModelDir string) {
+	if len(os.Args) < 4 {
+		fatal("--yent requires: <micro_yent.gguf> [seed_phrase] [output.png] [seed]")
+	}
+
+	yentPath := os.Args[3]
+	seedPhrase := "a painting of"
+	outPath := "yentyo_auto.png"
+	seed := int64(time.Now().UnixNano())
+
+	if len(os.Args) > 4 {
+		seedPhrase = os.Args[4]
+	}
+	if len(os.Args) > 5 {
+		outPath = os.Args[5]
+	}
+	if len(os.Args) > 6 {
+		fmt.Sscanf(os.Args[6], "%d", &seed)
+	}
+
+	// Phase 0: Generate prompt with micro-Yent
+	fmt.Print("\n--- Phase 0: Prompt Generation (micro-Yent) ---\n")
+	start := time.Now()
+
+	pg, err := NewPromptGenerator(yentPath)
+	if err != nil {
+		fatal("prompt generator: %v", err)
+	}
+
+	// Generate prompt
+	prompt := pg.Generate(seedPhrase, 30, 0.8)
+	// Clean up: trim to reasonable length, no trailing spaces
+	prompt = strings.TrimSpace(prompt)
+	if len(prompt) > 200 {
+		prompt = prompt[:200]
+	}
+
+	pg.Free()
+	runtime.GC()
+
+	fmt.Printf("Generated prompt: %q (%.1fs)\n", prompt, time.Since(start).Seconds())
+
+	// Run diffusion with generated prompt
+	runDiffusion(sdModelDir, prompt, outPath, seed, 25, 64, 7.5)
+}
+
+func runDiffusion(modelDir, prompt, outPath string, seed int64, numSteps, latentSize int, guidanceScale float32) {
 	fmt.Printf("Model: %s\n", modelDir)
 	fmt.Printf("Prompt: %q\n", prompt)
 	fmt.Printf("Seed: %d, Steps: %d, Guidance: %.1f, Latent: %dx%d\n", seed, numSteps, guidanceScale, latentSize, latentSize)
@@ -107,7 +168,6 @@ func main() {
 	if err != nil {
 		fatal("unet parse: %v", err)
 	}
-	// Free raw safetensors data, keep only converted tensors
 	unetST = nil
 	runtime.GC()
 	fmt.Printf("done (%v)\n", time.Since(start))
@@ -129,17 +189,14 @@ func main() {
 	for step, t := range timesteps {
 		stepStart := time.Now()
 
-		// UNet forward: unconditional + conditional
 		noiseUncond := unet.Forward(latent, t, uncondEmb)
 		noiseCond := unet.Forward(latent, t, condEmb)
 
-		// Classifier-free guidance: uncond + scale * (cond - uncond)
 		noisePred := NewTensor(noiseUncond.Shape...)
 		for i := range noisePred.Data {
 			noisePred.Data[i] = noiseUncond.Data[i] + guidanceScale*(noiseCond.Data[i]-noiseUncond.Data[i])
 		}
 
-		// Scheduler step
 		latent = sched.Step(noisePred, t, latent)
 
 		fmt.Printf("  Step %d/%d (t=%d): %.1fs\n",
@@ -147,7 +204,6 @@ func main() {
 	}
 	fmt.Printf("\nDiffusion: %.1fs total\n", time.Since(totalStart).Seconds())
 
-	// Free UNet
 	unet = nil
 	runtime.GC()
 	fmt.Println("UNet freed")
@@ -155,7 +211,6 @@ func main() {
 	// ===== PHASE 3: VAE Decoding =====
 	fmt.Print("\n--- Phase 3: VAE Decoding ---\n")
 
-	// Scale latent for VAE
 	latent = Scale(latent, float32(1.0/0.18215))
 
 	fmt.Print("Loading VAE decoder... ")
@@ -188,7 +243,6 @@ func main() {
 	fmt.Println("done!")
 }
 
-// randomLatent generates Gaussian noise using Box-Muller transform
 func randomLatent(n, c, h, w int, seed int64) *Tensor {
 	rng := rand.New(rand.NewSource(seed))
 	t := NewTensor(n, c, h, w)
@@ -214,7 +268,6 @@ func randomLatent(n, c, h, w int, seed int64) *Tensor {
 	return t
 }
 
-// savePNG converts [1, 3, H, W] tensor (values in ~[-1,1]) to RGB PNG
 func savePNG(tensor *Tensor, path string) error {
 	H := tensor.Shape[2]
 	W := tensor.Shape[3]
@@ -222,11 +275,9 @@ func savePNG(tensor *Tensor, path string) error {
 
 	for y := 0; y < H; y++ {
 		for x := 0; x < W; x++ {
-			// NCHW layout: channel c at index c*H*W + y*W + x
 			r := tensor.Data[0*H*W+y*W+x]
 			g := tensor.Data[1*H*W+y*W+x]
 			b := tensor.Data[2*H*W+y*W+x]
-			// VAE output is ~[-1, 1] → [0, 1]
 			rgba.Set(x, y, color.RGBA{
 				R: clampByte((r + 1) / 2),
 				G: clampByte((g + 1) / 2),
