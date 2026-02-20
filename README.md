@@ -36,7 +36,7 @@ You say something
 ┌──────────────┐     ┌──────────────────────────────┐
 │  micro-Yent  │────>│  BK-SDM-Tiny (ONNX Runtime)  │
 │  69M LLM Q8  │     │  CLIP → UNet → VAE → PNG     │
-│  (Go, GGUF)  │     │                               │
+│  (Go, GGUF)  │     │                              │
 └──────┬───────┘     └──────────────┬───────────────┘
   mood detection              512x512 image
   → visual template                 │
