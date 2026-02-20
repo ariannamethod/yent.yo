@@ -50,16 +50,16 @@ You say something
         │
         ▼
 ┌──────────────┐     ┌──────────────────────────────┐
-│  micro-Yent   │────>│  BK-SDM-Tiny (ONNX Runtime)  │
-│  69M LLM Q8   │     │  CLIP → UNet → VAE → PNG     │
-│  (Go, GGUF)   │     │  + LoRA style adapters        │
+│  micro-Yent  │────>│  BK-SDM-Tiny (ONNX Runtime)  │
+│  69M LLM Q8  │     │  CLIP → UNet → VAE → PNG     │
+│  (Go, GGUF)  │     │  + LoRA style adapters       │
 └──────────────┘     └──────────────────────────────┘
   mood detection              512x512 image
   → visual template                 │
   → LLM fills details        ┌─────▼──────┐
-  → style suffix              │ ASCII filter│
-                              │ (optional)  │
-                              └────────────┘
+  → style suffix             │ASCII filter│
+                             │ (optional) │
+                             └────────────┘
 ```
 
 1. You say something
