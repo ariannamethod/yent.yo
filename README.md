@@ -91,35 +91,17 @@ The more boring you are, the more creative Yent gets.
 ## Quick Start
 
 ```bash
-# 1. Clone
 git clone https://github.com/ariannamethod/yent.yo.git
 cd yent.yo
-
-# 2. Download weights from HuggingFace (~1.5 GB total)
-pip install huggingface_hub
-huggingface-cli download ataeff/yent.yo --local-dir hf_weights
-
-# 3. Build Go binary
-cd go && go build -o yentyo . && cd ..
-
-# 4. Generate (Yent reacts to your words)
-./go/yentyo bk-sdm-tiny --yent hf_weights/weights/micro-yent/micro-yent-q8_0.gguf "who are you" output.png 42
-
-# 5. Post-process (artifact detection + Yent's words)
-python3 artifact_mask.py output.png output_final.png
+make setup                          # auto-detects hardware, downloads optimal weights, builds
+make run-yent INPUT="who are you"   # full pipeline: Yent reacts → image → artifact mask → output.png
 ```
 
-**With ONNX Runtime** (recommended — 10x faster on GPU, 5x faster on CPU):
-```bash
-cd go && go build -tags ort -o yentyo_ort . && cd ..
-pip install onnxruntime-gpu  # or just: pip install onnxruntime
+`make setup` detects your hardware and downloads the right weights:
+- **GPU** (CUDA) → fp16 ONNX + onnxruntime-gpu (A100: **2 sec/image**)
+- **CPU** → int8 ONNX + onnxruntime (MacBook: **2 min/image**)
 
-# Full pipeline: micro-Yent prompt → ONNX diffusion → artifact mask
-python3 ort_generate.py hf_weights/weights/onnx_fp16 hf_weights/weights/clip_tokenizer \
-    "who are you" out.png 42 10 7.5
-```
-
-**Which weights?** fp16 for GPU (A100: 2 sec/image), int8 for CPU (MacBook: 2 min/image).
+See `make info` for detected configuration.
 
 ## micro-Yent: First nanollama Model
 
