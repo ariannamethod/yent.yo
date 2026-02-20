@@ -194,37 +194,45 @@ func vaeMidAttention(x *Tensor, v *VAEDecoder) *Tensor {
 	// Single-head attention (headDim = C = 512)
 	scale := float32(1.0 / math.Sqrt(float64(C)))
 	out := NewTensor(seq, C)
-	scores := make([]float32, seq) // reuse buffer
 
-	for i := 0; i < seq; i++ {
-		// Compute attention scores for row i
-		maxS := float32(-math.MaxFloat32)
-		for j := 0; j < seq; j++ {
-			s := float32(0)
-			for d := 0; d < C; d++ {
-				s += q.Data[i*C+d] * k.Data[j*C+d]
-			}
-			scores[j] = s * scale
-			if scores[j] > maxS {
-				maxS = scores[j]
-			}
+	if hasAccel {
+		// Fused tiled single-head attention in C.
+		// At 64×64: seq=4096, dim=512 → score tile = 256×4096 = 4MB (fits L3)
+		tileSize := 256
+		if seq <= 256 {
+			tileSize = seq
 		}
-		// Softmax
-		sumExp := float32(0)
-		for j := range scores {
-			scores[j] = float32(math.Exp(float64(scores[j] - maxS)))
-			sumExp += scores[j]
-		}
-		for j := range scores {
-			scores[j] /= sumExp
-		}
-		// Weighted sum of values
-		for d := 0; d < C; d++ {
-			s := float32(0)
+		accelTiledAttentionSingle(q.Data, k.Data, val.Data, out.Data,
+			seq, C, scale, tileSize)
+	} else {
+		scores := make([]float32, seq)
+		for i := 0; i < seq; i++ {
+			maxS := float32(-math.MaxFloat32)
 			for j := 0; j < seq; j++ {
-				s += scores[j] * val.Data[j*C+d]
+				s := float32(0)
+				for d := 0; d < C; d++ {
+					s += q.Data[i*C+d] * k.Data[j*C+d]
+				}
+				scores[j] = s * scale
+				if scores[j] > maxS {
+					maxS = scores[j]
+				}
 			}
-			out.Data[i*C+d] = s
+			sumExp := float32(0)
+			for j := range scores {
+				scores[j] = float32(math.Exp(float64(scores[j] - maxS)))
+				sumExp += scores[j]
+			}
+			for j := range scores {
+				scores[j] /= sumExp
+			}
+			for d := 0; d < C; d++ {
+				s := float32(0)
+				for j := 0; j < seq; j++ {
+					s += scores[j] * val.Data[j*C+d]
+				}
+				out.Data[i*C+d] = s
+			}
 		}
 	}
 

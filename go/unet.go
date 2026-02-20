@@ -7,6 +7,7 @@ import (
 
 const attnHeadDim = 8 // BK-SDM-Tiny: attention_head_dim=8
 
+
 // UNet2D is the BK-SDM-Tiny UNet (no mid block)
 // Down: 3 blocks (1 resnet + 1 attn each), blocks 0-1 have downsampler
 // Up: 3 blocks (2 resnets + 2 attns each), blocks 0-1 have upsampler
@@ -273,6 +274,7 @@ func transformerForward(x, textEmb *Tensor, tb TransformerBlock) *Tensor {
 
 // sdAttention: multi-head attention with headDim=8 (BK-SDM-Tiny)
 // qInput: [seqQ, dim], kvInput: [seqKV, kvDim]
+// At 64×64 latent: seqQ=4096, 40 heads. Tiled attention keeps score tiles in L3 cache.
 func sdAttention(qInput, kvInput *Tensor, qW, kW, vW, outW, outB *Tensor, dim int) *Tensor {
 	seqQ := qInput.Shape[0]
 	seqKV := kvInput.Shape[0]
@@ -285,38 +287,47 @@ func sdAttention(qInput, kvInput *Tensor, qW, kW, vW, outW, outB *Tensor, dim in
 	scale := float32(1.0 / math.Sqrt(float64(attnHeadDim)))
 	out := NewTensor(seqQ, dim)
 
-	for h := 0; h < numHeads; h++ {
-		off := h * attnHeadDim
-		scores := make([]float32, seqKV) // reuse per head (not per query!)
-		for i := 0; i < seqQ; i++ {
-			// Compute attention scores for this query
-			maxScore := float32(-math.MaxFloat32)
-			for j := 0; j < seqKV; j++ {
-				sum := float32(0)
-				for d := 0; d < attnHeadDim; d++ {
-					sum += q.Data[i*dim+off+d] * k.Data[j*dim+off+d]
-				}
-				scores[j] = sum * scale
-				if scores[j] > maxScore {
-					maxScore = scores[j]
-				}
-			}
-			// Softmax
-			sumExp := float32(0)
-			for j := range scores {
-				scores[j] = float32(math.Exp(float64(scores[j] - maxScore)))
-				sumExp += scores[j]
-			}
-			for j := range scores {
-				scores[j] /= sumExp
-			}
-			// Weighted sum of values
-			for d := 0; d < attnHeadDim; d++ {
-				sum := float32(0)
+	if hasAccel {
+		// Fused tiled attention in C: deinterleave + tiled matmul + softmax + reinterleave
+		// Static buffers, zero Go allocation. Tile size 256 → 4MB score tile fits in L3.
+		tileSize := 256
+		if seqQ <= 256 {
+			tileSize = seqQ // no tiling needed for small sequences
+		}
+		accelTiledAttention(q.Data, k.Data, v.Data, out.Data,
+			seqQ, seqKV, attnHeadDim, numHeads, dim, scale, tileSize)
+	} else {
+		// Fallback: scalar attention
+		for h := 0; h < numHeads; h++ {
+			off := h * attnHeadDim
+			scores := make([]float32, seqKV)
+			for i := 0; i < seqQ; i++ {
+				maxScore := float32(-math.MaxFloat32)
 				for j := 0; j < seqKV; j++ {
-					sum += scores[j] * v.Data[j*dim+off+d]
+					sum := float32(0)
+					for d := 0; d < attnHeadDim; d++ {
+						sum += q.Data[i*dim+off+d] * k.Data[j*dim+off+d]
+					}
+					scores[j] = sum * scale
+					if scores[j] > maxScore {
+						maxScore = scores[j]
+					}
 				}
-				out.Data[i*dim+off+d] = sum
+				sumExp := float32(0)
+				for j := range scores {
+					scores[j] = float32(math.Exp(float64(scores[j] - maxScore)))
+					sumExp += scores[j]
+				}
+				for j := range scores {
+					scores[j] /= sumExp
+				}
+				for d := 0; d < attnHeadDim; d++ {
+					sum := float32(0)
+					for j := 0; j < seqKV; j++ {
+						sum += scores[j] * v.Data[j*dim+off+d]
+					}
+					out.Data[i*dim+off+d] = sum
+				}
 			}
 		}
 	}

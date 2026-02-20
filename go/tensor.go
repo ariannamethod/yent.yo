@@ -40,21 +40,46 @@ func (t *Tensor) Clone() *Tensor {
 
 // Linear: y = x @ W^T + b, x: [batch, in], W: [out, in], b: [out] → [batch, out]
 func Linear(x, weight, bias *Tensor) *Tensor {
-	batch := x.Shape[0]
+batch := x.Shape[0]
 	inDim := x.Shape[1]
 	outDim := weight.Shape[0]
 	out := NewTensor(batch, outDim)
 
-	for b := 0; b < batch; b++ {
-		for o := 0; o < outDim; o++ {
-			sum := float32(0)
-			for i := 0; i < inDim; i++ {
-				sum += x.Data[b*inDim+i] * weight.Data[o*inDim+i]
+	if hasAccel {
+		// BLAS: out = x @ W^T → treat as out^T = W @ x^T
+		// But simpler: sgemm(batch, outDim, inDim, x, W^T)
+		// W is [outDim, inDim] row-major = W^T in col-major sense
+		// We want C[batch, outDim] = X[batch, inDim] @ W^T[inDim, outDim]
+		// = sgemm(M=batch, N=outDim, K=inDim, A=X, B=W^T)
+		// But W is stored as [outDim, inDim], so W^T is what we need
+		// We can use: C = alpha * A @ B^T by calling sgemm with CblasTrans on B
+		// For simplicity, just use accelSgemm with transposed weight
+		// Actually: rewrite as batched dot products via sgemm
+		// C[M,N] = A[M,K] @ B[K,N] where B = W^T
+		// W is [outDim, inDim], W^T is [inDim, outDim]
+		// So we need to transpose W. But sgemm can handle this.
+		// Use accelBatchedMatmulNT(1, batch, outDim, inDim, 1.0, x, W, out)
+		// That computes: out = 1.0 * x @ W^T ← exactly what we need!
+		accelBatchedMatmulNT(1, batch, outDim, inDim, 1.0, x.Data, weight.Data, out.Data)
+		if bias != nil {
+			for b := 0; b < batch; b++ {
+				for o := 0; o < outDim; o++ {
+					out.Data[b*outDim+o] += bias.Data[o]
+				}
 			}
-			if bias != nil {
-				sum += bias.Data[o]
+		}
+	} else {
+		for b := 0; b < batch; b++ {
+			for o := 0; o < outDim; o++ {
+				sum := float32(0)
+				for i := 0; i < inDim; i++ {
+					sum += x.Data[b*inDim+i] * weight.Data[o*inDim+i]
+				}
+				if bias != nil {
+					sum += bias.Data[o]
+				}
+				out.Data[b*outDim+o] = sum
 			}
-			out.Data[b*outDim+o] = sum
 		}
 	}
 	return out
@@ -62,7 +87,7 @@ func Linear(x, weight, bias *Tensor) *Tensor {
 
 // Conv2d: input [N,Cin,H,W], weight [Cout,Cin,kH,kW], bias [Cout], stride, padding
 func Conv2d(input, weight, bias *Tensor, stride, padding int) *Tensor {
-	N := input.Shape[0]
+N := input.Shape[0]
 	Cin := input.Shape[1]
 	Hin := input.Shape[2]
 	Win := input.Shape[3]
@@ -74,28 +99,64 @@ func Conv2d(input, weight, bias *Tensor, stride, padding int) *Tensor {
 
 	out := NewTensor(N, Cout, Hout, Wout)
 
-	for n := 0; n < N; n++ {
-		for co := 0; co < Cout; co++ {
-			for oh := 0; oh < Hout; oh++ {
-				for ow := 0; ow < Wout; ow++ {
-					sum := float32(0)
-					for ci := 0; ci < Cin; ci++ {
-						for kh := 0; kh < kH; kh++ {
-							for kw := 0; kw < kW; kw++ {
-								ih := oh*stride - padding + kh
-								iw := ow*stride - padding + kw
-								if ih >= 0 && ih < Hin && iw >= 0 && iw < Win {
-									inIdx := ((n*Cin+ci)*Hin+ih)*Win + iw
-									wIdx := ((co*Cin+ci)*kH+kh)*kW + kw
-									sum += input.Data[inIdx] * weight.Data[wIdx]
+	if hasAccel {
+		spatialOut := Hout * Wout
+		for n := 0; n < N; n++ {
+			inputOffset := n * Cin * Hin * Win
+			outputOffset := n * Cout * Hout * Wout
+			if kH == 1 && kW == 1 && stride == 1 && padding == 0 {
+				// 1×1 conv = matrix multiply, no im2col needed
+				// output[Cout, spatial] = weight[Cout, Cin] @ input[Cin, spatial]
+				accelSgemm(Cout, spatialOut, Cin, 1.0,
+					weight.Data, input.Data[inputOffset:],
+					0.0, out.Data[outputOffset:outputOffset+Cout*spatialOut])
+				if bias != nil {
+					for co := 0; co < Cout; co++ {
+						b := bias.Data[co]
+						off := outputOffset + co*spatialOut
+						for i := 0; i < spatialOut; i++ {
+							out.Data[off+i] += b
+						}
+					}
+				}
+			} else {
+				var biasData []float32
+				if bias != nil {
+					biasData = bias.Data
+				}
+				accelConv2d(
+					input.Data[inputOffset:],
+					Cin, Hin, Win,
+					weight.Data, biasData, Cout,
+					kH, kW, stride, padding,
+					out.Data[outputOffset:outputOffset+Cout*spatialOut],
+				)
+			}
+		}
+	} else {
+		for n := 0; n < N; n++ {
+			for co := 0; co < Cout; co++ {
+				for oh := 0; oh < Hout; oh++ {
+					for ow := 0; ow < Wout; ow++ {
+						sum := float32(0)
+						for ci := 0; ci < Cin; ci++ {
+							for kh := 0; kh < kH; kh++ {
+								for kw := 0; kw < kW; kw++ {
+									ih := oh*stride - padding + kh
+									iw := ow*stride - padding + kw
+									if ih >= 0 && ih < Hin && iw >= 0 && iw < Win {
+										inIdx := ((n*Cin+ci)*Hin+ih)*Win + iw
+										wIdx := ((co*Cin+ci)*kH+kh)*kW + kw
+										sum += input.Data[inIdx] * weight.Data[wIdx]
+									}
 								}
 							}
 						}
+						if bias != nil {
+							sum += bias.Data[co]
+						}
+						out.Data[((n*Cout+co)*Hout+oh)*Wout+ow] = sum
 					}
-					if bias != nil {
-						sum += bias.Data[co]
-					}
-					out.Data[((n*Cout+co)*Hout+oh)*Wout+ow] = sum
 				}
 			}
 		}
@@ -105,16 +166,33 @@ func Conv2d(input, weight, bias *Tensor, stride, padding int) *Tensor {
 
 // GroupNorm: x [N,C,H,W], weight [C], bias [C], num_groups, eps
 func GroupNorm(x, weight, bias *Tensor, numGroups int, eps float32) *Tensor {
-	N := x.Shape[0]
+N := x.Shape[0]
 	C := x.Shape[1]
 	H := x.Shape[2]
 	W := x.Shape[3]
 	groupSize := C / numGroups
 	out := NewTensor(N, C, H, W)
 
+	if hasAccel {
+		for n := 0; n < N; n++ {
+			nOff := n * C * H * W
+			var wData, bData []float32
+			if weight != nil {
+				wData = weight.Data
+				bData = bias.Data
+			}
+			for g := 0; g < numGroups; g++ {
+				accelGroupNorm(
+					x.Data[nOff:], out.Data[nOff:],
+					wData, bData,
+					g*groupSize, (g+1)*groupSize, H, W, eps)
+			}
+		}
+		return out
+	}
+
 	for n := 0; n < N; n++ {
 		for g := 0; g < numGroups; g++ {
-			// Compute mean and variance for this group
 			mean := float32(0)
 			count := groupSize * H * W
 			for c := g * groupSize; c < (g+1)*groupSize; c++ {
@@ -157,7 +235,7 @@ func GroupNorm(x, weight, bias *Tensor, numGroups int, eps float32) *Tensor {
 
 // LayerNorm: x [batch, dim], weight [dim], bias [dim], eps
 func LayerNorm(x, weight, bias *Tensor, eps float32) *Tensor {
-	batch := x.Shape[0]
+batch := x.Shape[0]
 	dim := x.Shape[1]
 	out := NewTensor(batch, dim)
 
@@ -189,7 +267,11 @@ func LayerNorm(x, weight, bias *Tensor, eps float32) *Tensor {
 
 // SiLU activation: x * sigmoid(x)
 func SiLU(x *Tensor) *Tensor {
-	out := NewTensor(x.Shape...)
+out := NewTensor(x.Shape...)
+	if hasAccel {
+		accelSiLU(x.Data, out.Data, len(x.Data))
+		return out
+	}
 	for i, v := range x.Data {
 		out.Data[i] = v * float32(1.0/(1.0+math.Exp(-float64(v))))
 	}
@@ -252,9 +334,13 @@ func Softmax(x *Tensor) *Tensor {
 
 // Add two tensors element-wise (must have same size)
 func Add(a, b *Tensor) *Tensor {
-	out := NewTensor(a.Shape...)
-	for i := range a.Data {
-		out.Data[i] = a.Data[i] + b.Data[i]
+out := NewTensor(a.Shape...)
+	if hasAccel {
+		accelVadd(a.Data, b.Data, out.Data, len(a.Data))
+	} else {
+		for i := range a.Data {
+			out.Data[i] = a.Data[i] + b.Data[i]
+		}
 	}
 	return out
 }

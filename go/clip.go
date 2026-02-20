@@ -141,29 +141,33 @@ func clipSelfAttention(x *Tensor, l CLIPLayer, seq int, causalMask []float32) *T
 	out := NewTensor(seq, clipDim)
 	scale := float32(1.0 / math.Sqrt(float64(clipHeadDim)))
 
-	for h := 0; h < clipHeads; h++ {
-		offset := h * clipHeadDim
-		// Compute attention scores
-		scores := NewTensor(seq, seq)
-		for i := 0; i < seq; i++ {
-			for j := 0; j < seq; j++ {
-				sum := float32(0)
-				for d := 0; d < clipHeadDim; d++ {
-					sum += q.Data[i*clipDim+offset+d] * k.Data[j*clipDim+offset+d]
-				}
-				scores.Data[i*seq+j] = sum*scale + causalMask[i*seq+j]
-			}
-		}
-		// Softmax
-		scores = Softmax(scores)
-		// Apply to values
-		for i := 0; i < seq; i++ {
-			for d := 0; d < clipHeadDim; d++ {
-				sum := float32(0)
+	if hasAccel {
+		// Fused tiled attention in C with causal mask
+		// CLIP seq=77, small enough that tile_size=77 means no tiling overhead
+		accelTiledAttentionMasked(q.Data, k.Data, v.Data, out.Data, causalMask,
+			seq, seq, clipHeadDim, clipHeads, clipDim, scale, seq)
+	} else {
+		for h := 0; h < clipHeads; h++ {
+			offset := h * clipHeadDim
+			scores := NewTensor(seq, seq)
+			for i := 0; i < seq; i++ {
 				for j := 0; j < seq; j++ {
-					sum += scores.Data[i*seq+j] * v.Data[j*clipDim+offset+d]
+					sum := float32(0)
+					for d := 0; d < clipHeadDim; d++ {
+						sum += q.Data[i*clipDim+offset+d] * k.Data[j*clipDim+offset+d]
+					}
+					scores.Data[i*seq+j] = sum*scale + causalMask[i*seq+j]
 				}
-				out.Data[i*clipDim+offset+d] = sum
+			}
+			scores = Softmax(scores)
+			for i := 0; i < seq; i++ {
+				for d := 0; d < clipHeadDim; d++ {
+					sum := float32(0)
+					for j := 0; j < seq; j++ {
+						sum += scores.Data[i*seq+j] * v.Data[j*clipDim+offset+d]
+					}
+					out.Data[i*clipDim+offset+d] = sum
+				}
 			}
 		}
 	}

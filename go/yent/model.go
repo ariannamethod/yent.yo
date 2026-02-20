@@ -168,10 +168,10 @@ func LoadLlamaModel(gguf *GGUFFile) (*LlamaModel, error) {
 	}
 
 	hasBias := w.Layers[0].BQ != nil
-	fmt.Printf("[tongue/model] loaded: %d layers, %d dim, %d heads, %d kv_heads, %d vocab, bias=%v\n",
+	fmt.Fprintf(os.Stderr, "[tongue/model] loaded: %d layers, %d dim, %d heads, %d kv_heads, %d vocab, bias=%v\n",
 		cfg.NumLayers, cfg.EmbedDim, cfg.NumHeads, cfg.NumKVHeads, cfg.VocabSize, hasBias)
 	if cfg.QKNorm || cfg.RopeConjugate {
-		fmt.Printf("[tongue/model] nanollama flags: qk_norm=%v rope_conjugate=%v\n", cfg.QKNorm, cfg.RopeConjugate)
+		fmt.Fprintf(os.Stderr, "[tongue/model] nanollama flags: qk_norm=%v rope_conjugate=%v\n", cfg.QKNorm, cfg.RopeConjugate)
 	}
 
 	return model, nil
@@ -201,9 +201,9 @@ func loadWeights(gguf *GGUFFile, cfg *LlamaConfig) (*LlamaWeights, error) {
 		// Not found — use tied embeddings
 		outData = w.TokenEmbed
 		outInfo = embInfo
-		fmt.Printf("[tongue/model] output.weight not found, using tied embeddings\n")
+		fmt.Fprintf(os.Stderr, "[tongue/model] output.weight not found, using tied embeddings\n")
 	} else {
-		fmt.Printf("[tongue/model] output.weight: type=%d\n", outInfo.Type)
+		fmt.Fprintf(os.Stderr, "[tongue/model] output.weight: type=%d\n", outInfo.Type)
 	}
 	w.Output = outData
 	w.OutputType = outInfo.Type
@@ -396,7 +396,7 @@ func matmulDispatch(out []float32, w []byte, wtype uint32, x []float32, rows, co
 	case ggmlTypeQ6_K:
 		MatMulQ6_K(out, w, x, rows, cols)
 	default:
-		fmt.Printf("[tongue/model] WARNING: unsupported matmul type %d for %dx%d\n", wtype, rows, cols)
+		fmt.Fprintf(os.Stderr, "[tongue/model] WARNING: unsupported matmul type %d for %dx%d\n", wtype, rows, cols)
 	}
 }
 

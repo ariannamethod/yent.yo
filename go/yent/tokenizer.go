@@ -16,6 +16,7 @@ package yent
 
 import (
 	"fmt"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -132,7 +133,7 @@ func NewTokenizer(meta *GGUFMetadata) *Tokenizer {
 				}
 			}
 		}
-		fmt.Printf("[tongue/tokenizer] %d special tokens registered\n", len(t.specialTokens))
+		fmt.Fprintf(os.Stderr, "[tongue/tokenizer] %d special tokens registered\n", len(t.specialTokens))
 	}
 
 	// GPT-2 BPE: build merge rank map from merge rules
@@ -141,10 +142,10 @@ func NewTokenizer(meta *GGUFMetadata) *Tokenizer {
 		for i, merge := range meta.TokenMerges {
 			t.mergeRank[merge] = i
 		}
-		fmt.Printf("[tongue/tokenizer] GPT-2 BPE mode, %d merges\n", len(meta.TokenMerges))
+		fmt.Fprintf(os.Stderr, "[tongue/tokenizer] GPT-2 BPE mode, %d merges\n", len(meta.TokenMerges))
 	}
 
-	fmt.Printf("[tongue/tokenizer] vocab=%d bos=%d eos=%d gpt2=%v add_space_prefix=%v\n",
+	fmt.Fprintf(os.Stderr, "[tongue/tokenizer] vocab=%d bos=%d eos=%d gpt2=%v add_space_prefix=%v\n",
 		t.VocabSize, t.BosID, t.EosID, t.IsGPT2, t.AddSpacePrefix)
 	return t
 }
@@ -475,13 +476,13 @@ func (t *Tokenizer) FindSpecialToken(name string) int {
 // DebugTokenize shows tokens for debugging
 func (t *Tokenizer) DebugTokenize(text string) {
 	ids := t.Encode(text, false)
-	fmt.Printf("[tokenizer] '%s' -> %d tokens: ", text, len(ids))
+	fmt.Fprintf(os.Stderr, "[tokenizer] '%s' -> %d tokens: ", text, len(ids))
 	for _, id := range ids {
 		if id >= 0 && id < t.VocabSize {
-			fmt.Printf("[%d:'%s'] ", id, t.Vocab[id])
+			fmt.Fprintf(os.Stderr, "[%d:'%s'] ", id, t.Vocab[id])
 		}
 	}
-	fmt.Println()
+	fmt.Fprintln(os.Stderr)
 }
 
 // SortVocabByScore returns vocab indices sorted by score (for debug)

@@ -60,7 +60,7 @@ You say something
 
 1. **micro-Yent** (69M, Go, Q8_0 GGUF) detects mood, picks a visual template, fills in details (~0.7s)
 2. **CLIP** encodes the reaction to embeddings
-3. **UNet** denoises latent, 25 steps
+3. **UNet** denoises latent, 10 steps
 4. **VAE** decodes → 512x512 image
 5. **Post-processing**: grain → artifact detection → ASCII/text blend → grain
 
@@ -88,6 +88,39 @@ The more boring you are, the more creative Yent gets.
 | "the meaning of life" | 0.8 | Normal |
 | "I fucking hate everything" | 0.7 | Strong emotion → focused |
 
+## Quick Start
+
+```bash
+# 1. Clone
+git clone https://github.com/ariannamethod/yent.yo.git
+cd yent.yo
+
+# 2. Download weights from HuggingFace (~1.5 GB total)
+pip install huggingface_hub
+huggingface-cli download ataeff/yent.yo --local-dir hf_weights
+
+# 3. Build Go binary
+cd go && go build -o yentyo . && cd ..
+
+# 4. Generate (Yent reacts to your words)
+./go/yentyo bk-sdm-tiny --yent hf_weights/weights/micro-yent/micro-yent-q8_0.gguf "who are you" output.png 42
+
+# 5. Post-process (artifact detection + Yent's words)
+python3 artifact_mask.py output.png output_final.png
+```
+
+**With ONNX Runtime** (recommended — 10x faster on GPU, 5x faster on CPU):
+```bash
+cd go && go build -tags ort -o yentyo_ort . && cd ..
+pip install onnxruntime-gpu  # or just: pip install onnxruntime
+
+# Full pipeline: micro-Yent prompt → ONNX diffusion → artifact mask
+python3 ort_generate.py hf_weights/weights/onnx_fp16 hf_weights/weights/clip_tokenizer \
+    "who are you" out.png 42 10 7.5
+```
+
+**Which weights?** fp16 for GPU (A100: 2 sec/image), int8 for CPU (MacBook: 2 min/image).
+
 ## micro-Yent: First nanollama Model
 
 | | |
@@ -114,10 +147,10 @@ No PyTorch at inference. Personality baked in at training time.
 - `ort_generate.py` — ONNX Runtime inference (zero PyTorch)
 
 ### Weights ([HuggingFace: ataeff/yent.yo](https://huggingface.co/ataeff/yent.yo))
-- `onnx_fp16/` — fp16 ONNX (948 MB)
-- `onnx_int8/` — int8 ONNX (476 MB)
-- `micro-yent-q8_0.gguf` — micro-Yent LLM (71 MB)
-- `clip_tokenizer/` — CLIP tokenizer
+- `weights/onnx_fp16/` — fp16 ONNX: CLIP + UNet + VAE (948 MB, GPU recommended)
+- `weights/onnx_int8/` — int8 ONNX: CLIP + UNet + VAE (476 MB, CPU fallback)
+- `weights/micro-yent/micro-yent-q8_0.gguf` — micro-Yent LLM (71 MB)
+- `weights/clip_tokenizer/` — CLIP BPE tokenizer (vocab.json + merges.txt)
 
 ## Philosophy
 

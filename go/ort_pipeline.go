@@ -1,6 +1,9 @@
+//go:build ort
+
 package main
 
 import (
+	"encoding/binary"
 	"fmt"
 	"image"
 	"image/color"
@@ -9,42 +12,96 @@ import (
 	"math/rand"
 	"os"
 	"time"
+	"unsafe"
 
 	ort "github.com/yalue/onnxruntime_go"
 )
 
-// ORTPipeline runs BK-SDM-Tiny inference via ONNX Runtime (GPU or CPU).
-// Zero PyTorch dependency — only needs .onnx files + libonnxruntime.so
+func init() {
+	runDiffusion = runDiffusionORT
+}
+
+func runDiffusionORT(modelDir, prompt, outPath string, seed int64, numSteps, latentSize int, guidanceScale float32) {
+	fmt.Printf("[ORT] Model: %s\n", modelDir)
+	fmt.Printf("[ORT] Prompt: %q\n", prompt)
+	fmt.Printf("[ORT] Seed: %d, Steps: %d, Guidance: %.1f, Latent: %dx%d\n",
+		seed, numSteps, guidanceScale, latentSize, latentSize)
+
+	// ONNX dir: env override or auto-detect (prefer int8)
+	onnxDir := os.Getenv("ONNX_DIR")
+	if onnxDir == "" {
+		onnxDir = modelDir + "/onnx_int8"
+		if _, err := os.Stat(onnxDir + "/unet.onnx"); err != nil {
+			onnxDir = modelDir + "/onnx_fp16"
+		}
+	}
+	fmt.Printf("[ORT] ONNX dir: %s\n", onnxDir)
+
+	// Auto-detect ORT library
+	ortLib := findORTLibrary()
+	if ortLib == "" {
+		fatal("libonnxruntime not found. Install: brew install onnxruntime")
+	}
+	fmt.Printf("[ORT] Library: %s\n", ortLib)
+
+	pipeline, err := NewORTPipeline(onnxDir, modelDir, ortLib)
+	if err != nil {
+		fatal("ORT pipeline: %v", err)
+	}
+	defer pipeline.Destroy()
+
+	if err := pipeline.Generate(prompt, seed, numSteps, latentSize, guidanceScale, outPath); err != nil {
+		fatal("generate: %v", err)
+	}
+}
+
+// findORTLibrary looks for libonnxruntime in common locations
+func findORTLibrary() string {
+	candidates := []string{
+		"/usr/local/lib/libonnxruntime.dylib",
+		"/usr/local/Cellar/onnxruntime/1.24.2/lib/libonnxruntime.dylib",
+		"/opt/homebrew/lib/libonnxruntime.dylib",
+		"/usr/lib/libonnxruntime.so",
+		"/usr/local/lib/libonnxruntime.so",
+	}
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			return c
+		}
+	}
+	return ""
+}
+
+// ORTPipeline runs BK-SDM-Tiny inference via ONNX Runtime (CPU).
 type ORTPipeline struct {
 	clipSession *ort.DynamicAdvancedSession
 	unetSession *ort.DynamicAdvancedSession
 	vaeSession  *ort.DynamicAdvancedSession
 	scheduler   *DDIMScheduler
-	tokenizer   *Tokenizer
+	tokenizer   *CLIPTokenizer
+
+	// Input data types detected from ONNX models
+	clipInputType ort.TensorElementDataType
+	unetInputType ort.TensorElementDataType // for sample + encoder_hidden_states
+	vaeInputType  ort.TensorElementDataType
 }
 
 // NewORTPipeline loads all ONNX models and creates inference sessions.
-// onnxDir should contain: clip_text_encoder.onnx, unet.onnx, vae_decoder.onnx
-// ortLibPath is path to libonnxruntime.so (or .dylib)
-// useCUDA enables GPU acceleration
-func NewORTPipeline(onnxDir, modelDir, ortLibPath string, useCUDA bool) (*ORTPipeline, error) {
-	// Initialize ONNX Runtime
+func NewORTPipeline(onnxDir, modelDir, ortLibPath string) (*ORTPipeline, error) {
 	ort.SetSharedLibraryPath(ortLibPath)
 	if err := ort.InitializeEnvironment(); err != nil {
 		return nil, fmt.Errorf("ORT init: %w", err)
 	}
 
-	// Session options
-	var sessionOpts []ort.NewAdvancedSessionOption
-	if useCUDA {
-		cudaOpts, err := ort.NewCUDAProviderOptions()
-		if err != nil {
-			fmt.Printf("Warning: CUDA not available (%v), falling back to CPU\n", err)
-		} else {
-			defer cudaOpts.Destroy()
-			sessionOpts = append(sessionOpts, ort.WithCUDAProviderOptions(cudaOpts))
-		}
+	// Session options: optimize graph, use all CPU threads
+	opts, err := ort.NewSessionOptions()
+	if err != nil {
+		return nil, fmt.Errorf("session options: %w", err)
 	}
+	defer opts.Destroy()
+	opts.SetGraphOptimizationLevel(ort.GraphOptimizationLevelEnableAll)
+	opts.SetIntraOpNumThreads(4) // physical cores (i5 = 4)
+	opts.SetInterOpNumThreads(1) // single inference stream
 
 	p := &ORTPipeline{}
 
@@ -58,49 +115,110 @@ func NewORTPipeline(onnxDir, modelDir, ortLibPath string, useCUDA bool) (*ORTPip
 	p.tokenizer = tok
 	fmt.Printf("done (%v)\n", time.Since(start))
 
-	// Load CLIP
+	// Inspect and load CLIP
+	clipPath := onnxDir + "/clip_text_encoder.onnx"
 	fmt.Print("Loading CLIP ONNX... ")
 	start = time.Now()
+	clipInputs, clipOutputs, err := ort.GetInputOutputInfo(clipPath)
+	if err != nil {
+		return nil, fmt.Errorf("CLIP info: %w", err)
+	}
+	fmt.Printf("\n  CLIP inputs: ")
+	for _, in := range clipInputs {
+		fmt.Printf("%s(%v %v) ", in.Name, in.DataType, in.Dimensions)
+	}
+	fmt.Printf("\n  CLIP outputs: ")
+	clipOutNames := make([]string, len(clipOutputs))
+	for i, out := range clipOutputs {
+		fmt.Printf("%s(%v %v) ", out.Name, out.DataType, out.Dimensions)
+		clipOutNames[i] = out.Name
+	}
+	fmt.Println()
+	p.clipInputType = clipInputs[0].DataType
+
 	p.clipSession, err = ort.NewDynamicAdvancedSession(
-		onnxDir+"/clip_text_encoder.onnx",
+		clipPath,
 		[]string{"input_ids"},
-		[]string{"last_hidden_state", "pooler_output"},
-		sessionOpts...,
+		clipOutNames,
+		opts,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("CLIP session: %w", err)
 	}
-	fmt.Printf("done (%v)\n", time.Since(start))
+	fmt.Printf("  CLIP loaded (%v)\n", time.Since(start))
 
-	// Load UNet
+	// Inspect and load UNet
+	unetPath := onnxDir + "/unet.onnx"
 	fmt.Print("Loading UNet ONNX... ")
 	start = time.Now()
+	unetInputs, unetOutputs, err := ort.GetInputOutputInfo(unetPath)
+	if err != nil {
+		return nil, fmt.Errorf("UNet info: %w", err)
+	}
+	fmt.Printf("\n  UNet inputs: ")
+	unetInNames := make([]string, len(unetInputs))
+	for i, in := range unetInputs {
+		fmt.Printf("%s(%v %v) ", in.Name, in.DataType, in.Dimensions)
+		unetInNames[i] = in.Name
+	}
+	fmt.Printf("\n  UNet outputs: ")
+	unetOutNames := make([]string, len(unetOutputs))
+	for i, out := range unetOutputs {
+		fmt.Printf("%s(%v %v) ", out.Name, out.DataType, out.Dimensions)
+		unetOutNames[i] = out.Name
+	}
+	fmt.Println()
+	// Find the sample input type (first input that isn't timestep)
+	for _, in := range unetInputs {
+		if in.Name == "sample" {
+			p.unetInputType = in.DataType
+			break
+		}
+	}
+
 	p.unetSession, err = ort.NewDynamicAdvancedSession(
-		onnxDir+"/unet.onnx",
-		[]string{"sample", "timestep", "encoder_hidden_states"},
-		[]string{"out_sample"},
-		sessionOpts...,
+		unetPath,
+		unetInNames,
+		unetOutNames,
+		opts,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("UNet session: %w", err)
 	}
-	fmt.Printf("done (%v)\n", time.Since(start))
+	fmt.Printf("  UNet loaded (%v)\n", time.Since(start))
 
-	// Load VAE decoder
+	// Inspect and load VAE
+	vaePath := onnxDir + "/vae_decoder.onnx"
 	fmt.Print("Loading VAE ONNX... ")
 	start = time.Now()
+	vaeInputs, vaeOutputs, err := ort.GetInputOutputInfo(vaePath)
+	if err != nil {
+		return nil, fmt.Errorf("VAE info: %w", err)
+	}
+	fmt.Printf("\n  VAE inputs: ")
+	for _, in := range vaeInputs {
+		fmt.Printf("%s(%v %v) ", in.Name, in.DataType, in.Dimensions)
+	}
+	fmt.Printf("\n  VAE outputs: ")
+	vaeOutNames := make([]string, len(vaeOutputs))
+	for i, out := range vaeOutputs {
+		fmt.Printf("%s(%v %v) ", out.Name, out.DataType, out.Dimensions)
+		vaeOutNames[i] = out.Name
+	}
+	fmt.Println()
+	p.vaeInputType = vaeInputs[0].DataType
+
 	p.vaeSession, err = ort.NewDynamicAdvancedSession(
-		onnxDir+"/vae_decoder.onnx",
+		vaePath,
 		[]string{"latent_sample"},
-		[]string{"sample"},
-		sessionOpts...,
+		vaeOutNames,
+		opts,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("VAE session: %w", err)
 	}
-	fmt.Printf("done (%v)\n", time.Since(start))
+	fmt.Printf("  VAE loaded (%v)\n", time.Since(start))
 
-	// Scheduler
 	p.scheduler = NewDDIMScheduler(1000, 0.00085, 0.012)
 
 	return p, nil
@@ -117,49 +235,60 @@ func (p *ORTPipeline) Generate(prompt string, seed int64, numSteps, latentSize i
 	start := time.Now()
 
 	condTokens := p.tokenizer.Encode(prompt)
-	uncondTokens := p.tokenizer.Encode("")
-
 	condEmb, err := p.encodeText(condTokens)
 	if err != nil {
 		return fmt.Errorf("cond encoding: %w", err)
 	}
-	uncondEmb, err := p.encodeText(uncondTokens)
-	if err != nil {
-		return fmt.Errorf("uncond encoding: %w", err)
+
+	// Only encode unconditional if using CFG
+	var uncondEmb []float32
+	useCFG := guidanceScale > 1.0
+	if useCFG {
+		uncondTokens := p.tokenizer.Encode("")
+		uncondEmb, err = p.encodeText(uncondTokens)
+		if err != nil {
+			return fmt.Errorf("uncond encoding: %w", err)
+		}
 	}
-	fmt.Printf("  Text encoding: %v\n", time.Since(start))
-	fmt.Printf("  cond_emb[0][:3] = [%.4f, %.4f, %.4f]\n",
-		condEmb[0], condEmb[1], condEmb[2])
+	fmt.Printf("  Text encoding: %v (CFG=%v)\n", time.Since(start), useCFG)
+	if len(condEmb) >= 3 {
+		fmt.Printf("  cond_emb[0][:3] = [%.4f, %.4f, %.4f]\n",
+			condEmb[0], condEmb[1], condEmb[2])
+	}
 
 	// Phase 2: Diffusion
 	fmt.Print("\n--- Phase 2: Diffusion ---\n")
 	timesteps := p.scheduler.SetTimesteps(numSteps)
 	fmt.Printf("Timesteps (%d): [%d ... %d]\n", len(timesteps), timesteps[0], timesteps[len(timesteps)-1])
 
-	// Initial noise
 	latent := makeNoise(1, 4, latentSize, latentSize, seed)
 
 	totalStart := time.Now()
 	for step, t := range timesteps {
 		stepStart := time.Now()
 
-		// UNet forward: unconditional + conditional
-		noiseUncond, err := p.runUNet(latent, int64(t), uncondEmb, latentSize)
-		if err != nil {
-			return fmt.Errorf("unet uncond step %d: %w", step, err)
-		}
-		noiseCond, err := p.runUNet(latent, int64(t), condEmb, latentSize)
-		if err != nil {
-			return fmt.Errorf("unet cond step %d: %w", step, err)
+		var noisePred []float32
+		if useCFG {
+			noiseUncond, err := p.runUNet(latent, int64(t), uncondEmb, latentSize)
+			if err != nil {
+				return fmt.Errorf("unet uncond step %d: %w", step, err)
+			}
+			noiseCond, err := p.runUNet(latent, int64(t), condEmb, latentSize)
+			if err != nil {
+				return fmt.Errorf("unet cond step %d: %w", step, err)
+			}
+			noisePred = make([]float32, len(noiseUncond))
+			for i := range noisePred {
+				noisePred[i] = noiseUncond[i] + guidanceScale*(noiseCond[i]-noiseUncond[i])
+			}
+		} else {
+			// No CFG — single UNet pass
+			noisePred, err = p.runUNet(latent, int64(t), condEmb, latentSize)
+			if err != nil {
+				return fmt.Errorf("unet step %d: %w", step, err)
+			}
 		}
 
-		// Classifier-free guidance
-		noisePred := make([]float32, len(noiseUncond))
-		for i := range noisePred {
-			noisePred[i] = noiseUncond[i] + guidanceScale*(noiseCond[i]-noiseUncond[i])
-		}
-
-		// Scheduler step
 		latent = p.schedulerStep(noisePred, t, latent, latentSize)
 
 		fmt.Printf("  Step %d/%d (t=%d): %.1fs\n",
@@ -170,7 +299,6 @@ func (p *ORTPipeline) Generate(prompt string, seed int64, numSteps, latentSize i
 	// Phase 3: VAE Decode
 	fmt.Print("\n--- Phase 3: VAE Decoding ---\n")
 
-	// Scale latent for VAE: latent / 0.18215
 	scaledLatent := make([]float32, len(latent))
 	for i := range latent {
 		scaledLatent[i] = latent[i] / 0.18215
@@ -184,7 +312,6 @@ func (p *ORTPipeline) Generate(prompt string, seed int64, numSteps, latentSize i
 	fmt.Printf("  VAE decode: %v\n", time.Since(start))
 	fmt.Printf("  Output: [1,3,%d,%d]\n", imgH, imgW)
 
-	// Save PNG
 	fmt.Printf("Saving %s... ", outPath)
 	if err := saveORTPNG(imgData, imgH, imgW, outPath); err != nil {
 		return fmt.Errorf("save: %w", err)
@@ -194,9 +321,46 @@ func (p *ORTPipeline) Generate(prompt string, seed int64, numSteps, latentSize i
 	return nil
 }
 
+// makeTensorValue creates an ORT Value from float32 data, converting to fp16 if needed.
+func makeTensorValue(data []float32, shape ort.Shape, dtype ort.TensorElementDataType) (ort.Value, error) {
+	switch dtype {
+	case ort.TensorElementDataTypeFloat:
+		return ort.NewTensor(shape, data)
+	case ort.TensorElementDataTypeFloat16:
+		// Convert float32 → fp16 bytes
+		fp16Bytes := float32SliceToFP16Bytes(data)
+		return ort.NewCustomDataTensor(shape, fp16Bytes, ort.TensorElementDataTypeFloat16)
+	default:
+		// Try float32 as default
+		return ort.NewTensor(shape, data)
+	}
+}
+
+// extractFloat32 extracts float32 data from an ORT output Value.
+func extractFloat32(v ort.Value) ([]float32, error) {
+	// Try float32 first
+	if t, ok := v.(*ort.Tensor[float32]); ok {
+		src := t.GetData()
+		result := make([]float32, len(src))
+		copy(result, src)
+		return result, nil
+	}
+	// Try CustomDataTensor (fp16)
+	if t, ok := v.(*ort.CustomDataTensor); ok {
+		raw := t.GetData()
+		n := len(raw) / 2
+		result := make([]float32, n)
+		for i := 0; i < n; i++ {
+			bits := binary.LittleEndian.Uint16(raw[i*2 : i*2+2])
+			result[i] = fp16ToFloat32(bits)
+		}
+		return result, nil
+	}
+	return nil, fmt.Errorf("unsupported output tensor type %T", v)
+}
+
 // encodeText runs CLIP text encoder on token IDs
 func (p *ORTPipeline) encodeText(tokens []int) ([]float32, error) {
-	// Convert to int64 for ONNX
 	tokenIDs := make([]int64, len(tokens))
 	for i, t := range tokens {
 		tokenIDs[i] = int64(t)
@@ -208,47 +372,29 @@ func (p *ORTPipeline) encodeText(tokens []int) ([]float32, error) {
 	}
 	defer inputTensor.Destroy()
 
-	outputs, err := p.clipSession.Run([]ort.ArbitraryTensor{inputTensor})
+	// Run with nil outputs — ORT allocates them
+	outputs := make([]ort.Value, 2) // last_hidden_state, pooler_output
+	err = p.clipSession.Run([]ort.Value{inputTensor}, outputs)
 	if err != nil {
 		return nil, fmt.Errorf("CLIP run: %w", err)
 	}
 	defer func() {
 		for _, o := range outputs {
-			o.Destroy()
+			if o != nil {
+				o.Destroy()
+			}
 		}
 	}()
 
-	// First output is last_hidden_state [1, 77, 512]
-	hiddenState, ok := outputs[0].(*ort.Tensor[float16])
-	if ok {
-		// fp16 output — convert to float32
-		data := hiddenState.GetData()
-		result := make([]float32, len(data))
-		for i, v := range data {
-			result[i] = float32(v)
-		}
-		return result, nil
-	}
-	// Try float32
-	hiddenState32, ok := outputs[0].(*ort.Tensor[float32])
-	if ok {
-		data := hiddenState32.GetData()
-		result := make([]float32, len(data))
-		copy(result, data)
-		return result, nil
-	}
-
-	return nil, fmt.Errorf("unexpected CLIP output type")
+	// First output is last_hidden_state
+	return extractFloat32(outputs[0])
 }
 
 // runUNet runs one UNet forward pass
 func (p *ORTPipeline) runUNet(latent []float32, timestep int64, textEmb []float32, latentSize int) ([]float32, error) {
-	// Convert latent to fp16 for ONNX
-	latentFp16 := float32ToFloat16(latent)
-	sampleTensor, err := ort.NewTensor(
+	sampleTensor, err := makeTensorValue(latent,
 		ort.NewShape(1, 4, int64(latentSize), int64(latentSize)),
-		latentFp16,
-	)
+		p.unetInputType)
 	if err != nil {
 		return nil, fmt.Errorf("sample tensor: %w", err)
 	}
@@ -260,93 +406,61 @@ func (p *ORTPipeline) runUNet(latent []float32, timestep int64, textEmb []float3
 	}
 	defer tsTensor.Destroy()
 
-	embFp16 := float32ToFloat16(textEmb)
-	embTensor, err := ort.NewTensor(ort.NewShape(1, 77, 768), embFp16)
+	embTensor, err := makeTensorValue(textEmb,
+		ort.NewShape(1, 77, 768),
+		p.unetInputType)
 	if err != nil {
 		return nil, fmt.Errorf("emb tensor: %w", err)
 	}
 	defer embTensor.Destroy()
 
-	outputs, err := p.unetSession.Run([]ort.ArbitraryTensor{sampleTensor, tsTensor, embTensor})
+	outputs := make([]ort.Value, 1) // out_sample
+	err = p.unetSession.Run([]ort.Value{sampleTensor, tsTensor, embTensor}, outputs)
 	if err != nil {
 		return nil, fmt.Errorf("UNet run: %w", err)
 	}
 	defer func() {
 		for _, o := range outputs {
-			o.Destroy()
+			if o != nil {
+				o.Destroy()
+			}
 		}
 	}()
 
-	// Output is [1, 4, latentSize, latentSize] in fp16
-	outFp16, ok := outputs[0].(*ort.Tensor[float16])
-	if ok {
-		data := outFp16.GetData()
-		result := make([]float32, len(data))
-		for i, v := range data {
-			result[i] = float32(v)
-		}
-		return result, nil
-	}
-	out32, ok := outputs[0].(*ort.Tensor[float32])
-	if ok {
-		data := out32.GetData()
-		result := make([]float32, len(data))
-		copy(result, data)
-		return result, nil
-	}
-
-	return nil, fmt.Errorf("unexpected UNet output type")
+	return extractFloat32(outputs[0])
 }
 
 // decodeVAE runs the VAE decoder
 func (p *ORTPipeline) decodeVAE(latent []float32, latentSize int) ([]float32, int, int, error) {
-	latentFp16 := float32ToFloat16(latent)
-	inputTensor, err := ort.NewTensor(
+	inputTensor, err := makeTensorValue(latent,
 		ort.NewShape(1, 4, int64(latentSize), int64(latentSize)),
-		latentFp16,
-	)
+		p.vaeInputType)
 	if err != nil {
 		return nil, 0, 0, fmt.Errorf("VAE input tensor: %w", err)
 	}
 	defer inputTensor.Destroy()
 
-	outputs, err := p.vaeSession.Run([]ort.ArbitraryTensor{inputTensor})
+	outputs := make([]ort.Value, 1) // sample
+	err = p.vaeSession.Run([]ort.Value{inputTensor}, outputs)
 	if err != nil {
 		return nil, 0, 0, fmt.Errorf("VAE run: %w", err)
 	}
 	defer func() {
 		for _, o := range outputs {
-			o.Destroy()
+			if o != nil {
+				o.Destroy()
+			}
 		}
 	}()
 
-	// Output is [1, 3, H, W] — image
 	imgH := latentSize * 8
 	imgW := latentSize * 8
-
-	outFp16, ok := outputs[0].(*ort.Tensor[float16])
-	if ok {
-		data := outFp16.GetData()
-		result := make([]float32, len(data))
-		for i, v := range data {
-			result[i] = float32(v)
-		}
-		return result, imgH, imgW, nil
-	}
-	out32, ok := outputs[0].(*ort.Tensor[float32])
-	if ok {
-		data := out32.GetData()
-		result := make([]float32, len(data))
-		copy(result, data)
-		return result, imgH, imgW, nil
-	}
-
-	return nil, 0, 0, fmt.Errorf("unexpected VAE output type")
+	data, err := extractFloat32(outputs[0])
+	return data, imgH, imgW, err
 }
 
 // schedulerStep applies DDIM step on flat float32 arrays
 func (p *ORTPipeline) schedulerStep(noisePred []float32, timestep int, sample []float32, latentSize int) []float32 {
-	// Reuse the existing scheduler logic
 	t := NewTensor(1, 4, latentSize, latentSize)
 	copy(t.Data, sample)
 	np := NewTensor(1, 4, latentSize, latentSize)
@@ -368,43 +482,88 @@ func (p *ORTPipeline) Destroy() {
 	ort.DestroyEnvironment()
 }
 
-// ---- Helpers ----
+// ---- fp16 helpers ----
 
-// float16 type for onnxruntime_go
-type float16 = uint16
-
-// float32ToFloat16 converts float32 slice to IEEE 754 fp16
-func float32ToFloat16(data []float32) []float16 {
-	result := make([]float16, len(data))
+// float32SliceToFP16Bytes converts []float32 to raw fp16 bytes (little-endian)
+func float32SliceToFP16Bytes(data []float32) []byte {
+	result := make([]byte, len(data)*2)
 	for i, v := range data {
-		result[i] = f32ToF16(v)
+		bits := f32ToF16(v)
+		binary.LittleEndian.PutUint16(result[i*2:], bits)
 	}
 	return result
 }
 
 // f32ToF16 converts a single float32 to float16 (IEEE 754)
-func f32ToF16(f float32) float16 {
+func f32ToF16(f float32) uint16 {
 	bits := math.Float32bits(f)
 	sign := (bits >> 31) & 1
 	exp := int((bits>>23)&0xFF) - 127
 	frac := bits & 0x7FFFFF
 
+	if exp == 128 {
+		// Inf/NaN
+		if frac != 0 {
+			return uint16(sign<<15 | 0x7C00 | 1) // NaN
+		}
+		return uint16(sign<<15 | 0x7C00) // Inf
+	}
 	if exp > 15 {
-		// Overflow → infinity
-		return float16(sign<<15 | 0x7C00)
+		return uint16(sign<<15 | 0x7C00) // overflow → Inf
+	}
+	if exp < -24 {
+		return uint16(sign << 15) // underflow → zero
 	}
 	if exp < -14 {
-		// Underflow → zero (or denorm, but we'll just zero)
-		return float16(sign << 15)
+		// Denormalized
+		frac |= 0x800000
+		shift := uint(-14 - exp)
+		frac >>= (shift + 13)
+		return uint16(sign<<15) | uint16(frac)
 	}
 
-	// Normal number
 	e16 := uint16(exp + 15)
 	f16 := uint16(frac >> 13)
-	return float16(uint16(sign)<<15 | e16<<10 | f16)
+	return uint16(sign)<<15 | e16<<10 | f16
 }
 
-// makeNoise generates Gaussian noise as flat float32 slice
+// fp16ToFloat32 converts IEEE 754 fp16 bits to float32
+func fp16ToFloat32(bits uint16) float32 {
+	sign := uint32(bits>>15) & 1
+	exp := uint32(bits>>10) & 0x1F
+	frac := uint32(bits) & 0x3FF
+
+	if exp == 31 {
+		if frac != 0 {
+			return float32(math.NaN())
+		}
+		if sign == 1 {
+			return float32(math.Inf(-1))
+		}
+		return float32(math.Inf(1))
+	}
+	if exp == 0 {
+		if frac == 0 {
+			if sign == 1 {
+				return math.Float32frombits(1 << 31) // -0
+			}
+			return 0
+		}
+		// Denormalized
+		f := float32(frac) / 1024.0 * float32(math.Pow(2, -14))
+		if sign == 1 {
+			return -f
+		}
+		return f
+	}
+
+	e32 := exp - 15 + 127
+	f32 := frac << 13
+	return math.Float32frombits(sign<<31 | e32<<23 | f32)
+}
+
+// ---- noise & image helpers ----
+
 func makeNoise(n, c, h, w int, seed int64) []float32 {
 	rng := rand.New(rand.NewSource(seed))
 	size := n * c * h * w
@@ -431,7 +590,6 @@ func makeNoise(n, c, h, w int, seed int64) []float32 {
 	return data
 }
 
-// saveORTPNG saves [1,3,H,W] flat float32 data as PNG
 func saveORTPNG(data []float32, H, W int, path string) error {
 	rgba := image.NewRGBA(image.Rect(0, 0, W, H))
 
@@ -456,3 +614,6 @@ func saveORTPNG(data []float32, H, W int, path string) error {
 	defer f.Close()
 	return png.Encode(f, rgba)
 }
+
+// Ensure unsafe is used (needed for potential future CGO interop)
+var _ = unsafe.Sizeof(0)

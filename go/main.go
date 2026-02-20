@@ -47,7 +47,7 @@ func main() {
 	prompt := "a painting of a cat"
 	outPath := "yentyo_output.png"
 	seed := int64(42)
-	numSteps := 25
+	numSteps := 10
 	latentSize := 64
 	guidanceScale := float32(7.5)
 
@@ -65,6 +65,11 @@ func main() {
 	}
 	if len(os.Args) > 6 {
 		fmt.Sscanf(os.Args[6], "%d", &latentSize)
+	}
+	if len(os.Args) > 7 {
+		var g float64
+		fmt.Sscanf(os.Args[7], "%f", &g)
+		guidanceScale = float32(g)
 	}
 
 	runDiffusion(modelDir, prompt, outPath, seed, numSteps, latentSize, guidanceScale)
@@ -129,7 +134,7 @@ func runWithYent(sdModelDir string) {
 	fmt.Printf("Yent's words: %q\n", yentWords)
 
 	// Run diffusion with generated prompt
-	runDiffusion(sdModelDir, prompt, outPath, seed, 25, 64, 7.5)
+	runDiffusion(sdModelDir, prompt, outPath, seed, 10, 64, 7.5)
 }
 
 // runPromptOnly generates a prompt using micro-Yent and prints it to stdout
@@ -172,7 +177,10 @@ func runPromptOnly() {
 	fmt.Println(prompt)
 }
 
-func runDiffusion(modelDir, prompt, outPath string, seed int64, numSteps, latentSize int, guidanceScale float32) {
+// runDiffusion dispatches to pure Go or ORT pipeline (overridden by init() in ort_pipeline.go)
+var runDiffusion = runDiffusionPureGo
+
+func runDiffusionPureGo(modelDir, prompt, outPath string, seed int64, numSteps, latentSize int, guidanceScale float32) {
 	fmt.Printf("Model: %s\n", modelDir)
 	fmt.Printf("Prompt: %q\n", prompt)
 	fmt.Printf("Seed: %d, Steps: %d, Guidance: %.1f, Latent: %dx%d\n", seed, numSteps, guidanceScale, latentSize, latentSize)

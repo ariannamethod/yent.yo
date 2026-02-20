@@ -319,7 +319,7 @@ func LoadGGUF(path string) (*GGUFFile, error) {
 		return nil, err
 	}
 
-	fmt.Printf("[tongue/gguf] version=%d tensors=%d metadata=%d\n", version, tensorCount, metadataCount)
+	fmt.Fprintf(os.Stderr, "[tongue/gguf] version=%d tensors=%d metadata=%d\n", version, tensorCount, metadataCount)
 
 	// Read metadata
 	kv := make(map[string]interface{})
@@ -393,7 +393,7 @@ func LoadGGUF(path string) (*GGUFFile, error) {
 		return nil, fmt.Errorf("no tensor data (dataOffset=%d, fileSize=%d)", dataOffset, fileInfo.Size())
 	}
 
-	fmt.Printf("[tongue/gguf] data offset=%d size=%.1f MB\n", dataOffset, float64(dataSize)/1024/1024)
+	fmt.Fprintf(os.Stderr, "[tongue/gguf] data offset=%d size=%.1f MB\n", dataOffset, float64(dataSize)/1024/1024)
 
 	if _, err := f.Seek(dataOffset, io.SeekStart); err != nil {
 		return nil, err
@@ -547,12 +547,12 @@ func parseMetadata(kv map[string]interface{}) GGUFMetadata {
 		}
 	}
 
-	fmt.Printf("[tongue/gguf] arch=%s layers=%d dim=%d heads=%d kv_heads=%d head_dim=%d\n",
+	fmt.Fprintf(os.Stderr, "[tongue/gguf] arch=%s layers=%d dim=%d heads=%d kv_heads=%d head_dim=%d\n",
 		arch, meta.NumLayers, meta.EmbedDim, meta.NumHeads, meta.NumKVHeads, meta.HeadDim)
-	fmt.Printf("[tongue/gguf] vocab=%d seq_len=%d ffn=%d rope_theta=%.1f tokenizer=%s\n",
+	fmt.Fprintf(os.Stderr, "[tongue/gguf] vocab=%d seq_len=%d ffn=%d rope_theta=%.1f tokenizer=%s\n",
 		meta.VocabSize, meta.SeqLen, meta.IntermSize, meta.RopeTheta, meta.TokenizerModel)
 	if len(meta.TokenMerges) > 0 {
-		fmt.Printf("[tongue/gguf] BPE merges=%d\n", len(meta.TokenMerges))
+		fmt.Fprintf(os.Stderr, "[tongue/gguf] BPE merges=%d\n", len(meta.TokenMerges))
 	}
 
 	return meta
@@ -588,14 +588,14 @@ func (g *GGUFFile) FindTensor(substr string) (*GGUFTensorInfo, bool) {
 func (g *GGUFFile) ListTensors() {
 	for name, info := range g.Tensors {
 		size := tensorBytes(info)
-		fmt.Printf("  %-50s  type=%d  dims=[", name, info.Type)
+		fmt.Fprintf(os.Stderr, "  %-50s  type=%d  dims=[", name, info.Type)
 		for d := uint32(0); d < info.NDims; d++ {
 			if d > 0 {
-				fmt.Print(", ")
+				fmt.Fprint(os.Stderr, ", ")
 			}
-			fmt.Printf("%d", info.Dims[d])
+			fmt.Fprintf(os.Stderr, "%d", info.Dims[d])
 		}
-		fmt.Printf("]  %.2f MB\n", float64(size)/1024/1024)
+		fmt.Fprintf(os.Stderr, "]  %.2f MB\n", float64(size)/1024/1024)
 	}
 }
 
