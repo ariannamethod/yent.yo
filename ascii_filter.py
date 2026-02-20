@@ -24,7 +24,7 @@ from PIL import Image
 
 # ASCII character sets ordered by "darkness" (light → dark)
 CHARSETS = {
-    "techno": " .·:;=+×*#%@█",  # 13 levels — yent.yo default
+    "techno": " .'·:;~=+×*#%@▓█",  # 16 levels — yent.yo default
     "punk": " ·•×#█",  # 6 levels — legacy
     "standard": " .:-=+*#%@",
     "detailed": " .'`^\",:;Il!i><~+_-?][}{1)(|/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$",

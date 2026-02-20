@@ -127,6 +127,9 @@ var styleSuffixes = []string{
 	", street art style, spray paint, raw energy",
 }
 
+// Quality suffix appended to every prompt — fights SD artifacts
+const qualitySuffix = ", clean composition, well-defined forms"
+
 // --- Dissonance-based temperature (inspired by Harmonix/HAiKU) ---
 //
 // Dissonance = how "strange" the input is relative to what the system knows.
@@ -354,7 +357,7 @@ func (pg *PromptGenerator) React(userInput string, maxTokens int, temperature fl
 	}
 
 	suffix := styleSuffixes[pg.rng.Intn(len(styleSuffixes))]
-	return result + suffix
+	return result + suffix + qualitySuffix
 }
 
 // Generate creates an image prompt by completing a seed phrase (legacy mode)

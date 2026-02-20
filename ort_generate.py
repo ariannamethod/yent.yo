@@ -163,7 +163,9 @@ def generate(onnx_dir, tokenizer_dir, prompt, output_path, seed=42, num_steps=25
 
     # Tokenize
     cond_tokens = tok.encode(prompt)
-    uncond_tokens = tok.encode("")
+    # Negative prompt — light touch, just fights the worst SD artifacts
+    neg_prompt = "extra fingers, blurry, watermark"
+    uncond_tokens = tok.encode(neg_prompt)
     cond_ids = np.array([cond_tokens], dtype=np.int64)
     uncond_ids = np.array([uncond_tokens], dtype=np.int64)
     print(f"Cond tokens: {cond_tokens[:8]}... (len={len(cond_tokens)})")

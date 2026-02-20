@@ -8,7 +8,7 @@ You don't tell Yent what to draw. You say something, and Yent draws what he thin
 
 ## Gallery (ASCII default)
 
-Output is ASCII art by default — colored glyphs (` .·:;=+×*#%@█`) on tinted cells. Technopunk Warhol. Each pixel becomes a character.
+Output is ASCII art by default — colored glyphs (` .'·:;~=+×*#%@▓█`) on tinted cells. Technopunk Warhol. Each pixel becomes a character.
 
 | You say | Yent thinks | Yent draws |
 |---------|-------------|------------|
@@ -148,11 +148,13 @@ Default output: 13-level charset ` .·:;=+×*#%@█` with per-cell background ti
 
 | Setting | Value |
 |---|---|
-| Charset | `techno` — 13 brightness levels |
+| Charset | `techno` — 16 brightness levels |
 | Foreground boost | 2.8x (vivid glyphs) |
 | Background fill | 0.50 (tinted cells, not just black) |
 | Font | 16px bold monospace |
 | Width | 100 columns |
+
+Negative prompt `"extra fingers, blurry, watermark"` — light touch, fights the worst SD artifacts without killing the style.
 
 Use `--raw` to skip ASCII and get raw pixels.
 
