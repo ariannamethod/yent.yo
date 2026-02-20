@@ -8,6 +8,7 @@ Styles:
   graffiti    — street art, graffiti, murals
   propaganda  — Soviet constructivist posters, Rodchenko, Lissitzky
   pixel       — pixel art, 8-bit game art
+  sketch      — pencil drawings, sketches, charcoal
 """
 
 import os
@@ -54,25 +55,39 @@ STYLES = {
     },
     "propaganda": {
         "soviet_posters": [
-            "Category:Soviet propaganda posters",
-            "Category:Soviet World War II posters",
-            "Category:Constructivism (art)",
+            "Category:Propaganda posters of the Soviet Union",
+            "Category:ROSTA Windows",
+            "Category:Posters of the Soviet Union",
         ],
-        "rodchenko": [
+        "avant_garde": [
+            "Category:Russian avant-garde",
+            "Category:Kazimir Malevich",
             "Category:Alexander Rodchenko",
-        ],
-        "lissitzky": [
-            "Category:El Lissitzky",
+            "Category:Works by El Lissitzky",
+            "Category:Vladimir Mayakovsky",
         ],
     },
     "pixel": {
         "pixel_art": [
+            "Category:Art at pixel scale",
+            "Category:SVG pixel art",
             "Category:Pixel art",
-            "Category:Pixel art characters",
         ],
-        "game_sprites": [
+        "game_art": [
             "Category:Video game sprites",
-            "Category:8-bit art",
+            "Category:8-bit digital art",
+            "Category:Video game art",
+        ],
+    },
+    "sketch": {
+        "pencil": [
+            "Category:Pencil drawings",
+            "Category:Pencil sketches",
+            "Category:Charcoal drawings",
+        ],
+        "ink_drawings": [
+            "Category:Ink drawings",
+            "Category:Pen drawings",
         ],
     },
 }
@@ -82,9 +97,13 @@ CATEGORIES = {}
 for style_cats in STYLES.values():
     CATEGORIES.update(style_cats)
 
-HEADERS = {"User-Agent": "Vitriol/1.0 (ariannamethod; dataset collection)"}
+HEADERS = {
+    "User-Agent": "Vitriol/1.0 (https://github.com/ariannamethod/vitriol.ai; art research; contact: treetribe7117@gmail.com)",
+}
 IMG_SIZE = 128
 THUMB_WIDTH = 512  # download at this width, then resize
+API_DELAY = 1.5    # seconds between API calls
+DL_DELAY = 1.0     # seconds between image downloads
 
 
 def fetch_json(url):
@@ -126,7 +145,7 @@ def get_category_images(category, limit=200):
         cont = data.get("continue", {}).get("gcmcontinue")
         if not cont:
             break
-        time.sleep(0.5)  # be polite
+        time.sleep(API_DELAY)
 
     return images[:limit]
 
@@ -189,7 +208,7 @@ def collect(style=None, sources=None, per_category=200):
                     total += 1
                     if (i + 1) % 10 == 0:
                         print(f"  Downloaded {i+1}/{len(urls)}")
-                time.sleep(0.3)
+                time.sleep(DL_DELAY)
 
     # Merge into style directory for training
     style_name = style or "all"
