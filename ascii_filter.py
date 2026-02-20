@@ -182,6 +182,46 @@ def image_to_ascii_png(image_path, out_path=None, width=100, charset="techno",
     return canvas
 
 
+def apply_film_grain(image_path, out_path=None, intensity=25, seed=None):
+    """Apply film grain to an image — hides SD artifacts, adds analog style.
+
+    Args:
+        image_path: Path to source image (or PIL Image)
+        out_path: Output path (if None, returns PIL Image)
+        intensity: Grain strength (0-100, default 25)
+        seed: Random seed for reproducible grain
+
+    Returns:
+        PIL Image if out_path is None, else saves and returns path
+    """
+    import numpy as np
+
+    if isinstance(image_path, Image.Image):
+        img = image_path.convert("RGB")
+    else:
+        img = Image.open(image_path).convert("RGB")
+
+    arr = np.array(img, dtype=np.float32)
+    rng = np.random.RandomState(seed)
+
+    # Gaussian grain
+    noise = rng.normal(0, intensity, arr.shape).astype(np.float32)
+
+    # Slight luminance bias — grain is stronger in shadows (like real film)
+    luminance = 0.299 * arr[:,:,0] + 0.587 * arr[:,:,1] + 0.114 * arr[:,:,2]
+    shadow_mask = 1.0 - (luminance / 255.0) * 0.4  # shadows get 1.0x, highlights 0.6x
+    for c in range(3):
+        noise[:,:,c] *= shadow_mask
+
+    result = np.clip(arr + noise, 0, 255).astype(np.uint8)
+    pil_out = Image.fromarray(result)
+
+    if out_path:
+        pil_out.save(out_path)
+        return out_path
+    return pil_out
+
+
 def image_to_ascii_html(image_path, width=100, charset="techno"):
     """Convert image to colored ASCII as HTML (for saving/sharing)."""
     img = Image.open(image_path).convert("RGB")
@@ -222,7 +262,7 @@ def image_to_ascii_html(image_path, width=100, charset="techno"):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python3 ascii_filter.py <image> [width] [--no-color] [--charset <set>] [--bg] [--html out.html] [--png out.png]")
+        print("Usage: python3 ascii_filter.py <image> [width] [--no-color] [--charset <set>] [--bg] [--html out.html] [--png out.png] [--grain out.png]")
         print(f"Charsets: {', '.join(CHARSETS.keys())}")
         sys.exit(1)
 
@@ -233,6 +273,7 @@ if __name__ == "__main__":
     bg = False
     html_out = None
     png_out = None
+    grain_out = None
 
     i = 2
     while i < len(sys.argv):
@@ -250,6 +291,9 @@ if __name__ == "__main__":
         elif arg == "--png" and i + 1 < len(sys.argv):
             i += 1
             png_out = sys.argv[i]
+        elif arg == "--grain" and i + 1 < len(sys.argv):
+            i += 1
+            grain_out = sys.argv[i]
         else:
             try:
                 width = int(arg)
@@ -257,7 +301,11 @@ if __name__ == "__main__":
                 pass
         i += 1
 
-    if png_out:
+    if grain_out:
+        apply_film_grain(image_path, grain_out)
+        sz = os.path.getsize(grain_out) / 1024
+        print(f"Saved: {grain_out} ({sz:.0f}KB, film grain)")
+    elif png_out:
         image_to_ascii_png(image_path, png_out, width, charset)
         sz = os.path.getsize(png_out) / 1024
         print(f"Saved: {png_out} ({sz:.0f}KB)")

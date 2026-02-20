@@ -1,9 +1,21 @@
 [
   {
-    "input": "hello",
-    "reaction": "a punk hand waving from the pot. what's the worst advice you could give, street art style, spray paint, raw energy",
-    "file": "hello.png",
-    "seed": 111
+    "input": "who are you",
+    "reaction": "a punk self-portrait staring back at you, oil painting, vivid colors, detailed brushwork",
+    "file": "who_are_you_1.png",
+    "seed": 137
+  },
+  {
+    "input": "who are you (again)",
+    "reaction": "a punk self-portrait staring back at you, oil painting, vivid colors, detailed brushwork",
+    "file": "who_are_you_2.png",
+    "seed": 888
+  },
+  {
+    "input": "who are you (and again)",
+    "reaction": "a strange figure emerging from static, dark symbolic illustration, textured, moody",
+    "file": "who_are_you_3.png",
+    "seed": 42
   },
   {
     "input": "I hate mondays",

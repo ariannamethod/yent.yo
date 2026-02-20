@@ -245,21 +245,25 @@ def generate(onnx_dir, tokenizer_dir, prompt, output_path, seed=42, num_steps=25
     img = np.transpose(img, (1, 2, 0))  # CHW → HWC
     pil_img = Image.fromarray(img)
 
+    # Film grain — always applied to raw images (hides SD artifacts, adds analog style)
+    from ascii_filter import image_to_ascii_png, apply_film_grain
+    pil_img = apply_film_grain(pil_img, intensity=25, seed=seed)
+    print(f"  Film grain applied (intensity=25)")
+
     if ascii_mode:
         # ASCII filter is the DEFAULT output — technopunk Warhol style
-        from ascii_filter import image_to_ascii_png
-        print("\n--- Phase 4: ASCII Filter (punk charset) ---")
+        print("\n--- Phase 4: ASCII Filter (techno charset) ---")
         t0 = time.time()
         image_to_ascii_png(pil_img, output_path, width=100, charset="techno",
                           font_size=16, brightness_boost=2.8, bg_level=0.50)
         print(f"  ASCII render: {time.time()-t0:.3f}s")
-        # Also save raw image alongside
+        # Also save raw image with grain alongside
         raw_path = output_path.rsplit(".", 1)[0] + "_raw.png"
         pil_img.save(raw_path)
-        print(f"\nSaved: {output_path} (ASCII) + {raw_path} (raw)")
+        print(f"\nSaved: {output_path} (ASCII) + {raw_path} (raw+grain)")
     else:
         pil_img.save(output_path)
-        print(f"\nSaved: {output_path} ({pil_img.size[0]}x{pil_img.size[1]})")
+        print(f"\nSaved: {output_path} ({pil_img.size[0]}x{pil_img.size[1]}, grain)")
 
     total = time.time() - total_t0
     print(f"Total generation time: {total:.2f}s")

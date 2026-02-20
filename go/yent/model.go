@@ -15,6 +15,7 @@ package yent
 import (
 	"fmt"
 	"math"
+	"os"
 )
 
 // LlamaModel is a loaded Llama model ready for inference
@@ -146,7 +147,7 @@ func LoadLlamaModel(gguf *GGUFFile) (*LlamaModel, error) {
 	// Cap sequence length to save memory (Qwen2.5 reports 32768 but we don't need it)
 	// KV cache at 32768: ~768MB. At 2048: ~48MB. Huge difference on 8GB Mac.
 	if cfg.SeqLen > 2048 {
-		fmt.Printf("[tongue/model] capping seq_len from %d to 2048\n", cfg.SeqLen)
+		fmt.Fprintf(os.Stderr, "WARNING: capping seq_len %d→2048 (saves ~720MB KV cache)\n", cfg.SeqLen)
 		cfg.SeqLen = 2048
 	}
 

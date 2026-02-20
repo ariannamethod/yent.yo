@@ -23,6 +23,9 @@ type PromptGenerator struct {
 	tokenizer *yent.Tokenizer
 	gguf      *yent.GGUFFile
 	rng       *rand.Rand
+	// Reusable buffers for sampling (avoid per-token allocations)
+	topKBuf  []idxVal
+	probsBuf []float32
 }
 
 // NewPromptGenerator loads micro-Yent from a GGUF file
@@ -203,19 +206,20 @@ func computeDissonance(input string) float32 {
 	entropy := float32(len(unique)) / float32(nWords)
 
 	// Arousal: emotional keyword density (high → focused → low dissonance)
-	arousalCount := 0
+	// Check both exact word match and substring match (Russian stems),
+	// but deduplicate to avoid double-counting
+	arousalMatched := map[string]bool{}
 	for _, w := range words {
 		if arousalWords[w] {
-			arousalCount++
+			arousalMatched[w] = true
 		}
 	}
-	// Also check substrings for Russian stems
 	for aw := range arousalWords {
 		if strings.Contains(lower, aw) {
-			arousalCount++
+			arousalMatched[aw] = true
 		}
 	}
-	arousal := float32(arousalCount) / float32(nWords+1)
+	arousal := float32(len(arousalMatched)) / float32(nWords+1)
 	if arousal > 1.0 {
 		arousal = 1.0
 	}
@@ -309,7 +313,9 @@ func (pg *PromptGenerator) React(userInput string, maxTokens int, temperature fl
 	}
 
 	// Collect micro-Yent's completion (visual details)
+	// Capped at 512 bytes to prevent unbounded growth
 	var completion []byte
+	const maxCompletionBytes = 512
 	for i := 0; i < maxTokens; i++ {
 		next := pg.sampleTopK(temperature, 40)
 
@@ -329,6 +335,9 @@ func (pg *PromptGenerator) React(userInput string, maxTokens int, temperature fl
 			break
 		}
 
+		if len(completion)+len(piece) > maxCompletionBytes {
+			break
+		}
 		completion = append(completion, []byte(piece)...)
 
 		// Stop at sentence end after reasonable length
@@ -408,7 +417,13 @@ done:
 	return string(output)
 }
 
-// sampleTopK samples from top-k logits
+// idxVal holds token index + logit value for top-k sampling
+type idxVal struct {
+	idx int
+	val float32
+}
+
+// sampleTopK samples from top-k logits (reuses buffers to avoid per-token allocations)
 func (pg *PromptGenerator) sampleTopK(temp float32, topK int) int {
 	logits := pg.model.State.Logits
 	vocab := pg.model.Config.VocabSize
@@ -423,11 +438,12 @@ func (pg *PromptGenerator) sampleTopK(temp float32, topK int) int {
 		return best
 	}
 
-	type idxVal struct {
-		idx int
-		val float32
+	// Reuse or grow buffers
+	if cap(pg.topKBuf) < topK {
+		pg.topKBuf = make([]idxVal, topK)
+		pg.probsBuf = make([]float32, topK)
 	}
-	top := make([]idxVal, topK)
+	top := pg.topKBuf[:topK]
 	for i := 0; i < topK; i++ {
 		top[i] = idxVal{-1, -1e30}
 	}
@@ -442,7 +458,7 @@ func (pg *PromptGenerator) sampleTopK(temp float32, topK int) int {
 	}
 
 	maxVal := top[0].val
-	probs := make([]float32, topK)
+	probs := pg.probsBuf[:topK]
 	var sum float32
 	for i := 0; i < topK; i++ {
 		if top[i].idx < 0 {

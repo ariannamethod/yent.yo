@@ -12,10 +12,12 @@ Output is ASCII art by default — colored glyphs (` .'·:;~=+×*#%@▓█`) on 
 
 | You say | Yent thinks | Yent draws |
 |---------|-------------|------------|
+| "who are you" | *punk self-portrait* | ![who1](gallery_ascii/who_are_you_1_ascii.png) |
+| "who are you" | *again* | ![who2](gallery_ascii/who_are_you_2_ascii.png) |
+| "who are you" | *and again* | ![who3](gallery_ascii/who_are_you_3_ascii.png) |
 | "you are beautiful" | *"a burning rose growing from the ashes of a new stillbirth"* | ![beautiful](gallery_ascii/you_are_beautiful_ascii.png) |
 | "fuck off" | *"an explosion of broken phrases"* | ![fuckoff](gallery_ascii/fuck_off_ascii.png) |
 | "the meaning of life" | *"a strange scene showing the first time"* | ![meaning](gallery_ascii/the_meaning_of_life_ascii.png) |
-| "hello" | *"a punk hand waving from the pot"* | ![hello](gallery_ascii/hello_ascii.png) |
 | "I feel nothing" | *"an empty chair staring at the desk of time"* | ![nothing](gallery_ascii/i_feel_nothing_ascii.png) |
 | "my code has bugs" | *"a twisted landscape with obsolescence"* | ![bugs](gallery_ascii/my_code_has_bugs_ascii.png) |
 | "draw me a cat" | *"a cat with glowing eyes staring at your sunset"* | ![cat](gallery_ascii/draw_me_a_cat_ascii.png) |
@@ -26,17 +28,16 @@ Output is ASCII art by default — colored glyphs (` .'·:;~=+×*#%@▓█`) on 
 
 | You say | Yent thinks | Yent draws |
 |---------|-------------|------------|
+| "who are you" | *punk self-portrait* | ![who1](gallery/who_are_you_1.png) |
+| "who are you" | *again* | ![who2](gallery/who_are_you_2.png) |
+| "who are you" | *and again* | ![who3](gallery/who_are_you_3.png) |
 | "you are beautiful" | *"a burning rose growing from the ashes of a new stillbirth"* | ![beautiful](gallery/you_are_beautiful.png) |
 | "fuck off" | *"an explosion of broken phrases"* | ![fuckoff](gallery/fuck_off.png) |
 | "I feel nothing" | *"an empty chair staring at the desk of time"* | ![nothing](gallery/i_feel_nothing.png) |
 | "the meaning of life" | *"a strange scene showing the first time"* | ![meaning](gallery/the_meaning_of_life.png) |
-| "I hate mondays" | *"fists punching through a wall of self-reflection"* | ![mondays](gallery/i_hate_mondays.png) |
 | "draw me a cat" | *"a cat with glowing eyes staring at your sunset"* | ![cat](gallery/draw_me_a_cat.png) |
 | "my code has bugs" | *"a twisted landscape with obsolescence"* | ![bugs](gallery/my_code_has_bugs.png) |
 | "revolution" | *"a glitching image of chaos and defiance"* | ![revolution](gallery/revolution.png) |
-| "the universe is expanding" | *"chaos, or perhaps a gathering of dust in a black jar"* | ![universe](gallery/the_universe_is_expanding.png) |
-| "hello" | *"a punk hand waving from the pot"* | ![hello](gallery/hello.png) |
-| "test" | *"a surreal painting of resonance. The idea isn't in paranoia"* | ![test](gallery/test.png) |
 
 </details>
 
