@@ -20,11 +20,19 @@ func main() {
 		fmt.Println("Usage:")
 		fmt.Println("  yentyo <sd_model_dir> [prompt] [output.png] [seed] [steps] [latent_size]")
 		fmt.Println("  yentyo <sd_model_dir> --yent <micro_yent.gguf> [seed_phrase] [output.png] [seed]")
+		fmt.Println("  yentyo --prompt-only <micro_yent.gguf> [seed_phrase] [max_tokens] [temperature]")
 		fmt.Println()
 		fmt.Println("Examples:")
 		fmt.Println("  yentyo bk-sdm-tiny \"a cat on a roof\" cat.png 42 25 64")
 		fmt.Println("  yentyo bk-sdm-tiny --yent micro-yent-f16.gguf \"a painting of\" auto.png 42")
+		fmt.Println("  yentyo --prompt-only micro-yent-q8_0.gguf \"a punk painting of\" 30 0.8")
 		os.Exit(0)
+	}
+
+	// --prompt-only mode: just generate a prompt and print it
+	if os.Args[1] == "--prompt-only" {
+		runPromptOnly()
+		return
 	}
 
 	modelDir := os.Args[1]
@@ -83,8 +91,8 @@ func runWithYent(sdModelDir string) {
 		fmt.Sscanf(os.Args[6], "%d", &seed)
 	}
 
-	// Phase 0: Generate prompt with micro-Yent
-	fmt.Print("\n--- Phase 0: Prompt Generation (micro-Yent) ---\n")
+	// Phase 0: Yent reacts to user input with a visual
+	fmt.Print("\n--- Phase 0: Yent's Reaction (micro-Yent) ---\n")
 	start := time.Now()
 
 	pg, err := NewPromptGenerator(yentPath)
@@ -92,8 +100,8 @@ func runWithYent(sdModelDir string) {
 		fatal("prompt generator: %v", err)
 	}
 
-	// Generate prompt
-	prompt := pg.Generate(seedPhrase, 30, 0.8)
+	// React: user input → Yent's visual reaction
+	prompt := pg.React(seedPhrase, 30, 0.8)
 	// Clean up: trim to reasonable length, no trailing spaces
 	prompt = strings.TrimSpace(prompt)
 	if len(prompt) > 200 {
@@ -107,6 +115,46 @@ func runWithYent(sdModelDir string) {
 
 	// Run diffusion with generated prompt
 	runDiffusion(sdModelDir, prompt, outPath, seed, 25, 64, 7.5)
+}
+
+// runPromptOnly generates a prompt using micro-Yent and prints it to stdout
+// In --react mode (default): Yent reacts to user input with a visual description
+// In --complete mode: completes a seed phrase (legacy)
+func runPromptOnly() {
+	if len(os.Args) < 3 {
+		fatal("--prompt-only requires: <micro_yent.gguf> <user_input> [max_tokens] [temperature]")
+	}
+
+	ggufPath := os.Args[2]
+	userInput := "hello world"
+	maxTokens := 30
+	temperature := float32(0.8)
+
+	if len(os.Args) > 3 {
+		userInput = os.Args[3]
+	}
+	if len(os.Args) > 4 {
+		fmt.Sscanf(os.Args[4], "%d", &maxTokens)
+	}
+	if len(os.Args) > 5 {
+		var t float64
+		fmt.Sscanf(os.Args[5], "%f", &t)
+		temperature = float32(t)
+	}
+
+	pg, err := NewPromptGenerator(ggufPath)
+	if err != nil {
+		fatal("prompt generator: %v", err)
+	}
+
+	// React mode: Yent's visual reaction to user input
+	prompt := pg.React(userInput, maxTokens, temperature)
+	prompt = strings.TrimSpace(prompt)
+	if len(prompt) > 200 {
+		prompt = prompt[:200]
+	}
+
+	fmt.Println(prompt)
 }
 
 func runDiffusion(modelDir, prompt, outPath string, seed int64, numSteps, latentSize int, guidanceScale float32) {
