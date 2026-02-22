@@ -75,7 +75,7 @@ Before the final image, Yent shows its "creative process" — 3 ASCII drafts tha
 ┌──────────────────────────────────────────────────┐
 │       '  .     ~           i    .                │
 │   .        ^          '                          │
-│                   ;            .    ~             │
+│                   ;            .    ~            │
 │         .              .                         │
 └──────────────────────────────────────────────────┘
 [yent] ...closer
@@ -113,17 +113,17 @@ You say something
         ▼
 ┌───────────────────────────────┐
 │        Dual Yent              │
-│  ┌─────────┐  ┌────────────┐ │
+│  ┌────────-─┐  ┌────────────┐ │
 │  │ Artist   │  │Commentator │ │     ┌──────────────────────────────┐
 │  │(micro/   │  │(nano/      │ │     │  BK-SDM-Tiny (ONNX Runtime)  │
 │  │ nano)    │  │ micro)     │ │────>│  CLIP → UNet → VAE → PNG     │
 │  │          │  │            │ │     │                              │
 │  │ visual   │  │ roast      │ │     └──────────────┬───────────────┘
 │  │ prompt   │  │ stream     │ │              512x512 image
-│  └─────────┘  └────────────┘ │                     │
-│     HAiKU dissonance         │              ┌─────▼──────────┐
-│     oppositional react       │              │ Post-processing│
-│     cloud morphing           │              │ grain + ASCII  │
+│  └─────────-┘  └────────────┘ │                     │
+│     HAiKU dissonance          │              ┌─────▼──────────┐
+│     oppositional react        │              │ Post-processing│
+│     cloud morphing            │              │ grain + ASCII  │
 └───────────────────────────────┘              └────────────────┘
 ```
 
