@@ -384,8 +384,9 @@ func (pg *PromptGenerator) React(userInput string, maxTokens int, temperature fl
 		starter = defaultStarters[pg.rng.Intn(len(defaultStarters))]
 	}
 
-	// Feed user input as context with oppositional framing
-	context := fmt.Sprintf(`"%s" — Yent reacts: %s`, userInput, starter)
+	// Feed user input as context with oppositional framing + visual grounding
+	context := fmt.Sprintf(`Describe a painting. Be specific: people, objects, colors, actions. No abstractions.
+"%s" — Yent reacts with sarcasm and drama: %s`, userInput, starter)
 	tokens := pg.tokenizer.Encode(context, true)
 
 	pg.model.Reset()

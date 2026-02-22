@@ -23,10 +23,15 @@ import (
 
 // PostProcess applies the full yent.yo post-processing pipeline.
 // Takes raw VAE output (image.RGBA) + Yent's words → processed image with grain, ASCII, effects.
-func PostProcess(img *image.RGBA, yentWords string) *image.RGBA {
+func PostProcess(img *image.RGBA, yentWords string, roastWords ...string) *image.RGBA {
 	bounds := img.Bounds()
 	W, H := bounds.Dx(), bounds.Dy()
-	fmt.Fprintf(os.Stderr, "[postprocess] %dx%d, words=%q\n", W, H, truncate(yentWords, 60))
+	// Combine artist + commentator words for richer ASCII texture
+	allWords := yentWords
+	if len(roastWords) > 0 && roastWords[0] != "" {
+		allWords = yentWords + " " + roastWords[0]
+	}
+	fmt.Fprintf(os.Stderr, "[postprocess] %dx%d, words=%q\n", W, H, truncate(allWords, 80))
 
 	// Step 1: Artifact score map
 	scoreMap := computeArtifactScore(img)
@@ -38,8 +43,8 @@ func PostProcess(img *image.RGBA, yentWords string) *image.RGBA {
 	grained := cloneRGBA(img)
 	applyFilmGrain(grained, 22, 42)
 
-	// Step 3: Render ASCII layer
-	asciiLayer := renderASCIILayer(img, yentWords, scoreMap)
+	// Step 3: Render ASCII layer (combined words from both yents)
+	asciiLayer := renderASCIILayer(img, allWords, scoreMap)
 
 	// Step 4: Blend — ASCII only where artifacts live
 	asciiMax := float32(0.90)
@@ -352,8 +357,10 @@ func renderASCIILayer(img *image.RGBA, words string, scoreMap []float32) *image.
 	draw.Draw(canvas, canvas.Bounds(), image.NewUniform(color.RGBA{8, 8, 12, 255}), image.Point{}, draw.Src)
 
 	numChars := len(asciiChars)
-	bgLevel := float32(0.40)
-	brightnessBoost := float32(2.8)
+	bgLevelClean := float32(0.50)  // clean zones: lighter bg, text fades
+	bgLevelArtifact := float32(0.25) // artifact zones: darker bg, text pops
+	boostClean := float32(1.5)     // clean zones: subtle text
+	boostArtifact := float32(3.2)  // artifact zones: punchy text
 
 	for y := 0; y < rows; y++ {
 		for x := 0; x < cols; x++ {
@@ -363,7 +370,11 @@ func renderASCIILayer(img *image.RGBA, words string, scoreMap []float32) *image.
 
 			px, py := x*charW, y*charH
 
-			// Background: tinted cell
+			// Background: tinted cell — darker in artifact zones for contrast
+			bgLevel := bgLevelClean
+			if score > 0.4 {
+				bgLevel = bgLevelArtifact
+			}
 			bgR := clamp8(float32(c.R) * bgLevel)
 			bgG := clamp8(float32(c.G) * bgLevel)
 			bgB := clamp8(float32(c.B) * bgLevel)
@@ -395,15 +406,19 @@ func renderASCIILayer(img *image.RGBA, words string, scoreMap []float32) *image.
 				continue
 			}
 
-			// Foreground color
-			cr := clamp8(float32(c.R) * brightnessBoost)
-			cg := clamp8(float32(c.G) * brightnessBoost)
-			cb := clamp8(float32(c.B) * brightnessBoost)
-
-			// Artifact zones: blue tint
+			// Foreground color — strong contrast in artifact zones
+			boost := boostClean
 			if score > 0.4 {
-				cr = clamp8(float32(cr) * 0.75)
-				cb = clamp8(float32(cb)*1.2 + 20)
+				boost = boostArtifact
+			}
+			cr := clamp8(float32(c.R) * boost)
+			cg := clamp8(float32(c.G) * boost)
+			cb := clamp8(float32(c.B) * boost)
+
+			// Artifact zones: blue tint for visual distinction
+			if score > 0.4 {
+				cr = clamp8(float32(cr) * 0.7)
+				cb = clamp8(float32(cb)*1.3 + 25)
 			}
 
 			// Draw character using basicfont

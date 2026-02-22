@@ -90,15 +90,36 @@ func NewORTPipeline(onnxDir, modelDir, ortLibPath string) (*ORTPipeline, error) 
 		return nil, fmt.Errorf("ORT init: %w", err)
 	}
 
-	// Session options: optimize graph, use all CPU threads
+	// Session options
 	opts, err := ort.NewSessionOptions()
 	if err != nil {
 		return nil, fmt.Errorf("session options: %w", err)
 	}
 	defer opts.Destroy()
 	opts.SetGraphOptimizationLevel(ort.GraphOptimizationLevelEnableAll)
-	opts.SetIntraOpNumThreads(4) // physical cores (i5 = 4)
-	opts.SetInterOpNumThreads(1) // single inference stream
+
+	// CUDA only when YENT_GPU=1 (avoids cuDNN version crashes)
+	usedGPU := false
+	if os.Getenv("YENT_GPU") == "1" {
+		cudaOpts, cudaErr := ort.NewCUDAProviderOptions()
+		if cudaErr == nil {
+			err = opts.AppendExecutionProviderCUDA(cudaOpts)
+			cudaOpts.Destroy()
+			if err == nil {
+				fmt.Println("[ORT] Using CUDA execution provider")
+				usedGPU = true
+			} else {
+				fmt.Printf("[ORT] CUDA init failed (%v), falling back to CPU\n", err)
+			}
+		} else {
+			fmt.Printf("[ORT] CUDA not available (%v), using CPU\n", cudaErr)
+		}
+	}
+	if !usedGPU {
+		fmt.Println("[ORT] Using CPU")
+		opts.SetIntraOpNumThreads(4)
+		opts.SetInterOpNumThreads(1)
+	}
 
 	p := &ORTPipeline{}
 
@@ -340,6 +361,15 @@ func extractFloat32(v ort.Value) ([]float32, error) {
 		src := t.GetData()
 		result := make([]float32, len(src))
 		copy(result, src)
+		return result, nil
+	}
+	// Try Tensor[uint16] (fp16 from patched ort library)
+	if t, ok := v.(*ort.Tensor[uint16]); ok {
+		src := t.GetData()
+		result := make([]float32, len(src))
+		for i, bits := range src {
+			result[i] = fp16ToFloat32(bits)
+		}
 		return result, nil
 	}
 	// Try CustomDataTensor (fp16)
@@ -592,7 +622,7 @@ func saveORTPNG(data []float32, H, W int, path string) error {
 
 	// Apply post-processing if yentWords available
 	if postProcessWords != "" {
-		rgba = PostProcess(rgba, postProcessWords)
+		rgba = PostProcess(rgba, postProcessWords, postProcessRoast)
 	}
 
 	return saveProcessedPNG(rgba, path)

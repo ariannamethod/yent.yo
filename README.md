@@ -25,6 +25,21 @@ You say something. Two Yents react — one draws, one roasts you. Where the imag
 | ![exist](gallery/why_do_we_exist.png) | | |
 | *"why do we exist"* | | |
 
+### v3 — System Prompt + Dual ASCII + GPU (H100)
+
+| | | |
+|---|---|---|
+| ![who_v3](gallery/who_are_you_v3.png) | ![beautiful_v3](gallery/you_are_beautiful_v3.png) | ![cat_v3](gallery/draw_me_a_cat_v3.png) |
+| *"who are you"* | *"you are beautiful"* | *"draw me a cat"* |
+| ![fuckoff_v3](gallery/fuck_off_v3.png) | ![nothing_v3](gallery/i_feel_nothing_v3.png) | ![bugs_v3](gallery/my_code_has_bugs_v3.png) |
+| *"fuck off"* | *"I feel nothing"* | *"my code has bugs"* |
+| ![meaning_v3](gallery/the_meaning_of_life_v3.png) | ![revolution_v3](gallery/revolution_v3.png) | ![tired_v3](gallery/i_am_so_tired_v3.png) |
+| *"the meaning of life"* | *"revolution"* | *"I am so tired"* |
+| ![mondays_v3](gallery/i_hate_mondays_v3.png) | ![test_v3](gallery/test_v3.png) | ![joke_v3](gallery/tell_me_a_joke_v3.png) |
+| *"I hate mondays"* | *"test"* | *"tell me a joke"* |
+| ![universe_v3](gallery/the_universe_is_expanding_v3.png) | ![exist_v3](gallery/why_do_we_exist_v3.png) | |
+| *"the universe is expanding"* | *"why do we exist"* | |
+
 Every reaction is different. Same input, different seed — different image, different words.
 
 ## What's New in v2
@@ -131,7 +146,7 @@ You say something
 2. **Artist** reacts oppositionally to input, generates visual prompt (~0.7s)
 3. **Commentator** roasts you in real-time while the image generates
 4. **CLIP** encodes the prompt to embeddings
-5. **UNet** denoises latent, 10 steps (~31s CPU / ~3s GPU)
+5. **UNet** denoises latent, 10 steps (~36s CPU / ~0.8s GPU)
 6. **VAE** decodes → 512x512 image
 7. **Post-processing**: grain → artifact detection → ASCII/text blend
 

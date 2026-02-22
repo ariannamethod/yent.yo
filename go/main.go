@@ -235,6 +235,7 @@ var runDiffusion = runDiffusionPureGo
 
 // Package-level state for post-processing (set before runDiffusion)
 var postProcessWords string // Yent's words for ASCII overlay
+var postProcessRoast string // Commentator's roast for ASCII overlay
 
 func runDiffusionPureGo(modelDir, prompt, outPath string, seed int64, numSteps, latentSize int, guidanceScale float32) {
 	fmt.Printf("Model: %s\n", modelDir)
@@ -400,7 +401,7 @@ func savePNG(tensor *Tensor, path string) error {
 
 	// Apply post-processing if yentWords available
 	if postProcessWords != "" {
-		rgba = PostProcess(rgba, postProcessWords)
+		rgba = PostProcess(rgba, postProcessWords, postProcessRoast)
 	}
 
 	return saveProcessedPNG(rgba, path)
@@ -492,6 +493,7 @@ func runDual(sdModelDir string) {
 
 	// Set words for post-processing pipeline
 	postProcessWords = result.YentWords
+	postProcessRoast = result.Roast
 
 	// Free LLMs before diffusion
 	dy.Free()
