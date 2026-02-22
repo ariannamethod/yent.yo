@@ -45,10 +45,11 @@ func PostProcess(img *image.RGBA, yentWords string) *image.RGBA {
 	asciiMax := float32(0.90)
 	scorePower := float32(3.0)
 
-	// Adaptive: dense images get less text
-	if meanScore > 0.5 {
-		asciiMax = max32(0.50, asciiMax-(meanScore-0.5)*0.8)
-		scorePower = max32(2.0, scorePower+(meanScore-0.5)*2.0)
+	// Adaptive: dense images get less text so the image shows through
+	if meanScore > 0.45 {
+		excess := meanScore - 0.45
+		asciiMax = max32(0.30, asciiMax-excess*2.0)
+		scorePower = max32(2.5, scorePower+excess*3.5)
 		fmt.Fprintf(os.Stderr, "[postprocess] adaptive: dense image, ascii_max=%.2f, power=%.1f\n", asciiMax, scorePower)
 	}
 

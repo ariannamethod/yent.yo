@@ -12,16 +12,18 @@ You say something. Two Yents react — one draws, one roasts you. Where the imag
 
 | | | |
 |---|---|---|
-| ![who](gallery/who_are_you.png) | ![beautiful](gallery/you_are_beautiful.png) | ![cat](gallery/draw_me_a_cat.png) |
-| *"who are you"* | *"you are beautiful"* | *"draw me a cat"* |
-| ![fuckoff](gallery/fuck_off.png) | ![meaning](gallery/the_meaning_of_life.png) | ![nothing](gallery/i_feel_nothing.png) |
-| *"fuck off"* | *"the meaning of life"* | *"I feel nothing"* |
-| ![bugs](gallery/my_code_has_bugs.png) | ![revolution](gallery/revolution.png) | ![tired](gallery/i_am_so_tired.png) |
-| *"my code has bugs"* | *"revolution"* | *"I am so tired"* |
-| ![mondays](gallery/i_hate_mondays.png) | ![test](gallery/test.png) | ![joke](gallery/tell_me_a_joke.png) |
-| *"I hate mondays"* | *"test"* | *"tell me a joke"* |
-| ![universe](gallery/the_universe_is_expanding.png) | ![exist](gallery/why_do_we_exist.png) | |
-| *"the universe is expanding"* | *"why do we exist"* | |
+| ![who](gallery/who_are_you.png) | ![who2](gallery/who_are_you_2.png) | ![who3](gallery/who_are_you_3.png) |
+| *"who are you"* | *"who are you" (2)* | *"who are you" (3)* |
+| ![beautiful](gallery/you_are_beautiful.png) | ![cat](gallery/draw_me_a_cat.png) | ![fuckoff](gallery/fuck_off.png) |
+| *"you are beautiful"* | *"draw me a cat"* | *"fuck off"* |
+| ![meaning](gallery/the_meaning_of_life.png) | ![nothing](gallery/i_feel_nothing.png) | ![bugs](gallery/my_code_has_bugs.png) |
+| *"the meaning of life"* | *"I feel nothing"* | *"my code has bugs"* |
+| ![revolution](gallery/revolution.png) | ![tired](gallery/i_am_so_tired.png) | ![mondays](gallery/i_hate_mondays.png) |
+| *"revolution"* | *"I am so tired"* | *"I hate mondays"* |
+| ![test](gallery/test.png) | ![joke](gallery/tell_me_a_joke.png) | ![universe](gallery/the_universe_is_expanding.png) |
+| *"test"* | *"tell me a joke"* | *"the universe is expanding"* |
+| ![exist](gallery/why_do_we_exist.png) | | |
+| *"why do we exist"* | | |
 
 Every reaction is different. Same input, different seed — different image, different words.
 
@@ -99,7 +101,7 @@ The entire pipeline runs in Go. No Python at runtime.
 
 - **LLM inference**: Pure Go GGUF loader + LLaMA architecture (yent/ subpackage)
 - **Diffusion**: ONNX Runtime via Go bindings (CGO) — CLIP → UNet → VAE
-- **Post-processing**: Go-native image encoding
+- **Post-processing**: Go-native artifact detection, grain, ASCII overlay, chromatic aberration, vignette
 
 Build with ORT support: `go build -tags ort`
 
@@ -218,12 +220,10 @@ No PyTorch at inference. Personality baked in at training time.
 - `go/ui.go` + `go/ui.html` — Embedded web interface (go:embed)
 - `go/ort_pipeline.go` — ONNX Runtime diffusion pipeline (CLIP + UNet + VAE via CGO)
 - `go/yent/` — LLM inference subpackage (GGUF loader, LlamaModel, Q8_0/F16 dequant)
+- `go/postprocess.go` — Artifact detection + grain + ASCII overlay + chromatic aberration + vignette
 - `go/prompt_gen_test.go` — Tests: dissonance, trigrams, Jaccard, templates, sketch (30 tests)
 - `go/server_test.go` — Tests: HTTP handlers, serialization, concurrent access (15 tests)
-
-### Python (post-processing only)
-- `artifact_mask.py` — artifact detection + Yent text overlay (the self-fixing pipeline)
-- `ascii_filter.py` — standalone ASCII art filter + film grain
+- `go/postprocess_test.go` — Tests: gradient, artifact score, grain, aberration, vignette, blend (18 tests)
 
 ### Weights ([HuggingFace: ataeff/yent.yo](https://huggingface.co/ataeff/yent.yo))
 - `weights/onnx_fp16/` — fp16 ONNX: CLIP + UNet + VAE (948 MB)
@@ -235,7 +235,7 @@ No PyTorch at inference. Personality baked in at training time.
 ## Testing
 
 ```bash
-cd go && go test -v              # run all tests (45 tests)
+cd go && go test -v              # run all tests (63 tests)
 cd go && go test -bench .        # run benchmarks
 cd go && go test -run Dissonance # run specific test group
 ```
