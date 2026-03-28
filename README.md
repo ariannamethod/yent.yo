@@ -14,38 +14,6 @@ You say something. Two Yents react — one draws, one roasts you. Where the imag
 
 | | | |
 |---|---|---|
-| ![who](gallery/who_are_you.png) | ![who2](gallery/who_are_you_2.png) | ![who3](gallery/who_are_you_3.png) |
-| *"who are you"* | *"who are you" (2)* | *"who are you" (3)* |
-| ![beautiful](gallery/you_are_beautiful.png) | ![cat](gallery/draw_me_a_cat.png) | ![fuckoff](gallery/fuck_off.png) |
-| *"you are beautiful"* | *"draw me a cat"* | *"fuck off"* |
-| ![meaning](gallery/the_meaning_of_life.png) | ![nothing](gallery/i_feel_nothing.png) | ![bugs](gallery/my_code_has_bugs.png) |
-| *"the meaning of life"* | *"I feel nothing"* | *"my code has bugs"* |
-| ![revolution](gallery/revolution.png) | ![tired](gallery/i_am_so_tired.png) | ![mondays](gallery/i_hate_mondays.png) |
-| *"revolution"* | *"I am so tired"* | *"I hate mondays"* |
-| ![test](gallery/test.png) | ![joke](gallery/tell_me_a_joke.png) | ![universe](gallery/the_universe_is_expanding.png) |
-| *"test"* | *"tell me a joke"* | *"the universe is expanding"* |
-| ![exist](gallery/why_do_we_exist.png) | | |
-| *"why do we exist"* | | |
-
-### v3 — System Prompt + Dual ASCII + GPU (H100)
-
-| | | |
-|---|---|---|
-| ![who_v3](gallery/who_are_you_v3.png) | ![beautiful_v3](gallery/you_are_beautiful_v3.png) | ![cat_v3](gallery/draw_me_a_cat_v3.png) |
-| *"who are you"* | *"you are beautiful"* | *"draw me a cat"* |
-| ![fuckoff_v3](gallery/fuck_off_v3.png) | ![nothing_v3](gallery/i_feel_nothing_v3.png) | ![bugs_v3](gallery/my_code_has_bugs_v3.png) |
-| *"fuck off"* | *"I feel nothing"* | *"my code has bugs"* |
-| ![meaning_v3](gallery/the_meaning_of_life_v3.png) | ![revolution_v3](gallery/revolution_v3.png) | ![tired_v3](gallery/i_am_so_tired_v3.png) |
-| *"the meaning of life"* | *"revolution"* | *"I am so tired"* |
-| ![mondays_v3](gallery/i_hate_mondays_v3.png) | ![test_v3](gallery/test_v3.png) | ![joke_v3](gallery/tell_me_a_joke_v3.png) |
-| *"I hate mondays"* | *"test"* | *"tell me a joke"* |
-| ![universe_v3](gallery/the_universe_is_expanding_v3.png) | ![exist_v3](gallery/why_do_we_exist_v3.png) | |
-| *"the universe is expanding"* | *"why do we exist"* | |
-
-### v4 — Resonance Yent 200M + BK-SDM-Base + Grain/ASCII
-
-| | | |
-|---|---|---|
 | ![who_v4](gallery/who_are_you_v4.png) | ![beautiful_v4](gallery/you_are_beautiful_v4.png) | ![cat_v4](gallery/draw_me_a_cat_v4.png) |
 | *"who are you"* | *"you are beautiful"* | *"draw me a cat"* |
 | ![fuckoff_v4](gallery/fuck_off_v4.png) | ![nothing_v4](gallery/i_feel_nothing_v4.png) | ![bugs_v4](gallery/my_code_has_bugs_v4.png) |
