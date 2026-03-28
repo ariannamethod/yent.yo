@@ -1,12 +1,14 @@
 # yent.yo — He Speaks. He Draws. He Argues Back.
 
-A text-to-image pipeline where **two LLMs argue** about your words, **BK-SDM-Tiny** draws the result, and then **the AI patches its own artifacts with its own words**.
+A text-to-image pipeline where **two LLMs argue** about your words, **BK-SDM-Base** draws the result, and then **the AI patches its own artifacts with its own words**.
 
 You say something. Two Yents react — one draws, one roasts you. Where the image breaks — text fills the cracks.
 
+**v4: Resonance Yent 200M + BK-SDM-Base (579M UNet) + 30 steps. Full pipeline.**
+
 **v2: Dual Yent + HAiKU Dissonance + Oppositional React + Web UI. Pure Go, zero Python at runtime.**
 
-**Both models built with [nanollama](https://github.com/ariannamethod/nanollama)** — our from-scratch LLM training framework. micro-Yent (69M) + nano-Yent (46M). No API calls, no borrowed models.
+**Both models built with [nanollama](https://github.com/ariannamethod/nanollama)** — our from-scratch LLM training framework. micro-Yent (69M) + nano-Yent (46M). No API calls, no borrowed models. v4 adds [Resonance Yent 200M](https://huggingface.co/ataeff/resonance) — dual attention (Content + RRPRAM), trained on 3.6B tokens.
 
 ## Gallery
 
@@ -38,6 +40,21 @@ You say something. Two Yents react — one draws, one roasts you. Where the imag
 | ![mondays_v3](gallery/i_hate_mondays_v3.png) | ![test_v3](gallery/test_v3.png) | ![joke_v3](gallery/tell_me_a_joke_v3.png) |
 | *"I hate mondays"* | *"test"* | *"tell me a joke"* |
 | ![universe_v3](gallery/the_universe_is_expanding_v3.png) | ![exist_v3](gallery/why_do_we_exist_v3.png) | |
+| *"the universe is expanding"* | *"why do we exist"* | |
+
+### v4 — Resonance Yent 200M + BK-SDM-Base + Grain/ASCII
+
+| | | |
+|---|---|---|
+| ![who_v4](gallery/who_are_you_v4.png) | ![beautiful_v4](gallery/you_are_beautiful_v4.png) | ![cat_v4](gallery/draw_me_a_cat_v4.png) |
+| *"who are you"* | *"you are beautiful"* | *"draw me a cat"* |
+| ![fuckoff_v4](gallery/fuck_off_v4.png) | ![nothing_v4](gallery/i_feel_nothing_v4.png) | ![bugs_v4](gallery/my_code_has_bugs_v4.png) |
+| *"fuck off"* | *"I feel nothing"* | *"my code has bugs"* |
+| ![meaning_v4](gallery/the_meaning_of_life_v4.png) | ![revolution_v4](gallery/revolution_v4.png) | ![tired_v4](gallery/i_am_so_tired_v4.png) |
+| *"the meaning of life"* | *"revolution"* | *"I am so tired"* |
+| ![mondays_v4](gallery/i_hate_mondays_v4.png) | ![test_v4](gallery/test_v4.png) | ![joke_v4](gallery/tell_me_a_joke_v4.png) |
+| *"I hate mondays"* | *"test"* | *"tell me a joke"* |
+| ![universe_v4](gallery/the_universe_is_expanding_v4.png) | ![exist_v4](gallery/why_do_we_exist_v4.png) | |
 | *"the universe is expanding"* | *"why do we exist"* | |
 
 Every reaction is different. Same input, different seed — different image, different words.
