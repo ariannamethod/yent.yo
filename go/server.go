@@ -211,7 +211,7 @@ func (s *Server) tryGenerateImage(prompt string) []byte {
 
 	// Run diffusion — this may call fatal(), so we need to be careful
 	// For now, only run if we verified the model exists above
-	runDiffusion(s.sdModelDir, prompt, tmpPath, seed, 10, 64, 7.5)
+	runDiffusion(s.sdModelDir, prompt, tmpPath, seed, 30, 64, 7.5)
 
 	data, err := os.ReadFile(tmpPath)
 	if err != nil {

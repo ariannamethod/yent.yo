@@ -67,7 +67,7 @@ func main() {
 	prompt := "a painting of a cat"
 	outPath := "yentyo_output.png"
 	seed := int64(42)
-	numSteps := 10
+	numSteps := 30
 	latentSize := 64
 	guidanceScale := float32(7.5)
 
@@ -157,7 +157,7 @@ func runWithYent(sdModelDir string) {
 	fmt.Printf("Yent's words: %q\n", yentWords)
 
 	// Run diffusion with generated prompt (post-processing applied automatically)
-	runDiffusion(sdModelDir, prompt, outPath, seed, 10, 64, 7.5)
+	runDiffusion(sdModelDir, prompt, outPath, seed, 30, 64, 7.5)
 }
 
 // runPromptOnly generates a prompt using micro-Yent and prints it to stdout
@@ -503,7 +503,7 @@ func runDual(sdModelDir string) {
 	fmt.Println(result.Prompt)
 
 	// Run diffusion (post-processing applied automatically via savePNG)
-	runDiffusion(sdModelDir, result.Prompt, outPath, seed, 10, 64, 7.5)
+	runDiffusion(sdModelDir, result.Prompt, outPath, seed, 30, 64, 7.5)
 }
 
 // runServe starts HTTP server with web UI
