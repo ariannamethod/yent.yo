@@ -278,13 +278,14 @@ func transformerForward(x, textEmb *Tensor, tb TransformerBlock) *Tensor {
 func sdAttention(qInput, kvInput *Tensor, qW, kW, vW, outW, outB *Tensor, dim int) *Tensor {
 	seqQ := qInput.Shape[0]
 	seqKV := kvInput.Shape[0]
-	numHeads := dim / attnHeadDim
+	numHeads := attnHeadDim   // diffusers config "attention_head_dim"=8 is the head COUNT, not the size
+	headDim := dim / numHeads // per-head size: 320/8=40, 640/8=80, 1280/8=160
 
 	q := Linear(qInput, qW, nil)  // [seqQ, dim]
 	k := Linear(kvInput, kW, nil) // [seqKV, dim]
 	v := Linear(kvInput, vW, nil) // [seqKV, dim]
 
-	scale := float32(1.0 / math.Sqrt(float64(attnHeadDim)))
+	scale := float32(1.0 / math.Sqrt(float64(headDim)))
 	out := NewTensor(seqQ, dim)
 
 	if hasAccel {
@@ -295,17 +296,17 @@ func sdAttention(qInput, kvInput *Tensor, qW, kW, vW, outW, outB *Tensor, dim in
 			tileSize = seqQ // no tiling needed for small sequences
 		}
 		accelTiledAttention(q.Data, k.Data, v.Data, out.Data,
-			seqQ, seqKV, attnHeadDim, numHeads, dim, scale, tileSize)
+			seqQ, seqKV, headDim, numHeads, dim, scale, tileSize)
 	} else {
 		// Fallback: scalar attention
 		for h := 0; h < numHeads; h++ {
-			off := h * attnHeadDim
+			off := h * headDim
 			scores := make([]float32, seqKV)
 			for i := 0; i < seqQ; i++ {
 				maxScore := float32(-math.MaxFloat32)
 				for j := 0; j < seqKV; j++ {
 					sum := float32(0)
-					for d := 0; d < attnHeadDim; d++ {
+					for d := 0; d < headDim; d++ {
 						sum += q.Data[i*dim+off+d] * k.Data[j*dim+off+d]
 					}
 					scores[j] = sum * scale
@@ -321,7 +322,7 @@ func sdAttention(qInput, kvInput *Tensor, qW, kW, vW, outW, outB *Tensor, dim in
 				for j := range scores {
 					scores[j] /= sumExp
 				}
-				for d := 0; d < attnHeadDim; d++ {
+				for d := 0; d < headDim; d++ {
 					sum := float32(0)
 					for j := 0; j < seqKV; j++ {
 						sum += scores[j] * v.Data[j*dim+off+d]

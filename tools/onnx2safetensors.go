@@ -194,18 +194,28 @@ func main() {
 	tensors, nodes := parseONNX(data)
 
 	initSet := map[string]bool{}
+	initDims := map[string]int{}
 	for _, t := range tensors {
 		initSet[t.name] = true
+		initDims[t.name] = len(t.dims)
 	}
-	// map mangled MatMul-weight initializer -> diffusers name (and mark for transpose)
-	rename := map[string]string{}
+	// Map a Linear's weight initializer -> its diffusers name. ONNX stores Linear
+	// weights two ways: MatMul (weight is [in,out], needs transpose to [out,in]) and
+	// Gemm with transB=1 (weight already [out,in], NO transpose). Only the 2D weight
+	// input is renamed: a Gemm's third input is a 1D bias, and renaming it onto
+	// "<layer>.weight" too would overwrite the real weight with bias data.
+	type rinfo struct {
+		name      string
+		transpose bool
+	}
+	rename := map[string]rinfo{}
 	for _, n := range nodes {
 		if n.op != "MatMul" && n.op != "Gemm" {
 			continue
 		}
 		for _, in := range n.inputs {
-			if initSet[in] {
-				rename[in] = nodeToDiffusers(n.name)
+			if initSet[in] && initDims[in] == 2 {
+				rename[in] = rinfo{nodeToDiffusers(n.name), n.op == "MatMul"}
 			}
 		}
 	}
@@ -222,9 +232,9 @@ func main() {
 		name := t.name
 		raw := t.raw
 		dims := append([]int64(nil), t.dims...)
-		if nn, ok := rename[name]; ok {
-			name = nn
-			if len(dims) == 2 && dt == "F16" {
+		if ri, ok := rename[name]; ok {
+			name = ri.name
+			if ri.transpose && len(dims) == 2 && dt == "F16" {
 				raw = transposeF16(raw, int(dims[0]), int(dims[1]))
 				dims[0], dims[1] = dims[1], dims[0]
 				transposed++
@@ -232,6 +242,9 @@ func main() {
 		}
 		// VAE ONNX prefixes its initializers with "vae."; yent.yo's loader does not.
 		name = strings.TrimPrefix(name, "vae.")
+		if _, dup := header[name]; dup {
+			fmt.Printf("COLLISION: %s (dims=%v dt=%s)\n", name, dims, dt)
+		}
 		start := len(blob)
 		blob = append(blob, raw...)
 		header[name] = map[string]any{
