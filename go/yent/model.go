@@ -373,6 +373,12 @@ func isSupportedType(t uint32) bool {
 
 // matmulDispatch dispatches to the right matmul based on tensor type
 func matmulDispatch(out []float32, w []byte, wtype uint32, x []float32, rows, cols int) {
+	// notorch first (one source of truth) when built -tags notorch; it returns
+	// false for any dtype it has no packed kernel for, and we fall through to
+	// the native matvec below — so an unsupported type never regresses.
+	if useNotorch && notorchQMatvec(out, w, wtype, x, rows, cols) {
+		return
+	}
 	switch wtype {
 	case ggmlTypeQ4_0:
 		MatMulQ4_0(out, w, x, rows, cols)
