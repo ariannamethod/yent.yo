@@ -96,10 +96,10 @@ Browser-based interface at `http://localhost:8080`:
 The entire pipeline runs in Go. No Python at runtime.
 
 - **LLM inference**: Pure Go GGUF loader + LLaMA architecture (yent/ subpackage)
-- **Diffusion**: ONNX Runtime via Go bindings (CGO) — CLIP → UNet → VAE
+- **Diffusion**: pure-Go CLIP → UNet → VAE (BK-SDM-Base); the compute backend is pluggable — native BLAS by default, [notorch](https://github.com/ariannamethod/notorch) with `-tags notorch` (pure-C tensor library, no ONNX Runtime), or ONNX Runtime with `-tags ort`
 - **Post-processing**: Go-native artifact detection, grain, ASCII overlay, chromatic aberration, vignette
 
-Build with ORT support: `go build -tags ort`
+Build the diffusion on notorch (the whole CLIP→UNet→VAE runs on the Arianna Method's pure-C stack, no ONNX Runtime): `go build -tags notorch`. Build with ONNX Runtime instead: `go build -tags ort`.
 
 ## How It Works
 
@@ -111,7 +111,7 @@ You say something
 │        Dual Yent              │
 │  ┌────────-─┐  ┌────────────┐ │
 │  │ Artist   │  │Commentator │ │     ┌──────────────────────────────┐
-│  │(micro/   │  │(nano/      │ │     │  BK-SDM-Base (ONNX Runtime)   │
+│  │(micro/   │  │(nano/      │ │     │  BK-SDM-Base (notorch)        │
 │  │ nano)    │  │ micro)     │ │────>│  CLIP → UNet → VAE → PNG     │
 │  │          │  │            │ │     │                              │
 │  │ visual   │  │ roast      │ │     └──────────────┬───────────────┘
